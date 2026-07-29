@@ -113,7 +113,7 @@ export const getMyGroups = query({
         };
       }),
     );
-    return groups.filter(Boolean);
+    return groups.filter((g): g is NonNullable<typeof g> => g !== null);
   },
 });
 
@@ -189,7 +189,7 @@ export const getGroupActiveAlarms = query({
         };
       }),
     );
-    return alarms.filter(Boolean);
+    return alarms.filter((a): a is NonNullable<typeof a> => a !== null);
   },
 });
 
