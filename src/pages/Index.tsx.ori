@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, memo, type RefObject } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useMutation, useQuery } from "convex/react";
 import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
@@ -92,25 +92,26 @@ interface PanicBtnProps {
   incomingNames: string[];
   alarmType: "panic" | "silent" | null;
   countdown: number | null;
-  progressCircleRef: RefObject<SVGCircleElement | null>;
+  pressProgress: number;
   onPointerDown: () => void;
   onPointerUp: () => void;
   onClick: () => void;
 }
 
-const PanicBtn = memo(function PanicBtn({
+function PanicBtn({
   isAlarmActive,
   hasIncoming,
   incomingNames,
   alarmType,
   countdown,
-  progressCircleRef,
+  pressProgress,
   onPointerDown,
   onPointerUp,
   onClick,
 }: PanicBtnProps) {
   const radius = 126;
   const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference * (1 - pressProgress);
 
   // Dua status aktif bersamaan (alarm sendiri aktif + ada alarm masuk) →
   // warna tombol bergantian setiap ~1.8 detik sebagai tanda "mode ganda".
@@ -179,14 +180,15 @@ const PanicBtn = memo(function PanicBtn({
         style={{ left: -24, top: -24 }}
       >
         <circle cx={(280 + 48) / 2} cy={(280 + 48) / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="5" />
-        <circle
-          ref={progressCircleRef}
-          cx={(280 + 48) / 2} cy={(280 + 48) / 2} r={radius}
-          fill="none" stroke={colorScheme.ring} strokeWidth="5"
-          strokeDasharray={circumference} strokeDashoffset={circumference}
-          strokeLinecap="round"
-          style={{ opacity: 0 }}
-        />
+        {pressProgress > 0 && (
+          <circle
+            cx={(280 + 48) / 2} cy={(280 + 48) / 2} r={radius}
+            fill="none" stroke={colorScheme.ring} strokeWidth="5"
+            strokeDasharray={circumference} strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            style={{ transition: "stroke-dashoffset 0.05s linear" }}
+          />
+        )}
       </svg>
 
       {/* Button body */}
@@ -313,7 +315,7 @@ const PanicBtn = memo(function PanicBtn({
       </motion.div>
     </div>
   );
-});
+}
 
 // ── Incoming alarm banner (below button) ─────────────────────────────────────
 // Reusable "X orang merespon" pill that expands into a name list. Used both
@@ -454,7 +456,7 @@ function IncomingAlarmBanner({
 function PanicButtonCore() {
   const navigate = useNavigate();
   const { incomingAlarms, respondToAlarmId } = useIncomingAlarms();
-  const progressCircleRef = useRef<SVGCircleElement | null>(null);
+  const [pressProgress, setPressProgress] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isAlarmActive, setIsAlarmActive] = useState(false);
   const [alarmType, setAlarmType] = useState<"panic" | "silent" | null>(null);
@@ -551,16 +553,10 @@ function PanicButtonCore() {
         activatePanicAlarm("panic");
       }
     }, 1000);
-    const radius = 126;
-    const circumference = 2 * Math.PI * radius;
     const animate = () => {
       const elapsed = Date.now() - pressStart.current;
       const progress = Math.min(elapsed / 3000, 1);
-      const circle = progressCircleRef.current;
-      if (circle) {
-        circle.style.opacity = progress > 0 ? "1" : "0";
-        circle.setAttribute("stroke-dashoffset", String(circumference * (1 - progress)));
-      }
+      setPressProgress(progress);
       if (progress < 1) rafRef.current = requestAnimationFrame(animate);
     };
     rafRef.current = requestAnimationFrame(animate);
@@ -569,11 +565,7 @@ function PanicButtonCore() {
   const cancelPress = useCallback(() => {
     if (countdownTimer.current) clearInterval(countdownTimer.current);
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    const circle = progressCircleRef.current;
-    if (circle) {
-      circle.style.opacity = "0";
-      circle.setAttribute("stroke-dashoffset", String(2 * Math.PI * 126));
-    }
+    setPressProgress(0);
     setCountdown(null);
   }, []);
 
@@ -661,7 +653,7 @@ function PanicButtonCore() {
           incomingNames={incomingNames}
           alarmType={alarmType}
           countdown={countdown}
-          progressCircleRef={progressCircleRef}
+          pressProgress={pressProgress}
           onPointerDown={startPress}
           onPointerUp={cancelPress}
           onClick={handleButtonClick}
