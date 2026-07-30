@@ -113,7 +113,7 @@ export const getMyGroups = query({
         };
       }),
     );
-    return groups.filter(Boolean);
+    return groups.filter((g): g is NonNullable<typeof g> => g !== null);
   },
 });
 
