@@ -20,6 +20,16 @@ export default defineSchema({
       v.array(v.union(v.literal("photo"), v.literal("audio"), v.literal("video"))),
     ),
     evidenceCaptureDurationSec: v.optional(v.number()),
+    // Fase 7: kontrol proteksi salah pencet tombol panic.
+    // panicHoldDurationSec: berapa detik user harus tekan-tahan sebelum
+    // sinyal panic terkirim (proteksi di sisi KLIEN, sebelum request
+    // dikirim ke server — beda dari rate limiter server di bawah).
+    panicHoldDurationSec: v.optional(v.number()),
+    // rateLimiterEnabled: kalau false, server SKIP pengecekan rate limit
+    // untuk createAlarm milik user ini. Default true (aman). User yang
+    // paham risikonya (misal sering latihan/testing) bisa mematikannya
+    // sendiri agar tidak pernah diblokir sistem saat kondisi darurat asli.
+    panicRateLimiterEnabled: v.optional(v.boolean()),
   })
     // Index ini WAJIB ada — @convex-dev/auth pakai ini untuk lookup user
     // saat sign-in/sign-up. Hilang = login/register akan gagal diam-diam.

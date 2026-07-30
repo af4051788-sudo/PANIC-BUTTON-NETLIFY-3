@@ -23,7 +23,14 @@ export const triggerAlarm = mutation({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
 
-    await rateLimiter.limit(ctx, "createAlarm", { key: userId, throws: true });
+    const user = await ctx.db.get(userId);
+    // Default AKTIF (aman) — user harus eksplisit matikan lewat Profil kalau
+    // mau tidak pernah dibatasi. Rate limiter tetap ada untuk cegah abuse
+    // otomatis/bot, tapi user berhak menonaktifkannya untuk dirinya sendiri
+    // supaya tidak berisiko diblokir sistem saat kondisi darurat asli.
+    if (user?.panicRateLimiterEnabled !== false) {
+      await rateLimiter.limit(ctx, "createAlarm", { key: userId, throws: true });
+    }
 
     // Resolve any existing active alarms first
     const existingActive = await ctx.db

@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { useMutation } from "convex/react";
+import { toast } from "sonner";
 import { api } from "@/convex/_generated/api.js";
 import type { Id } from "@/convex/_generated/dataModel.d.ts";
 
@@ -36,16 +37,29 @@ export function useEvidenceCapture() {
     async (alarmId: Id<"alarms">, type: EvidenceType, blob: Blob) => {
       try {
         const uploadUrl = await generateUploadUrl({});
+        // Convex storage upload endpoint menolak Content-Type yang membawa
+        // parameter tambahan (mis. "video/webm;codecs=vp8,opus") — ambil
+        // base type-nya saja sebelum dikirim sebagai header.
+        const baseContentType = (blob.type || "application/octet-stream").split(";")[0].trim();
         const res = await fetch(uploadUrl, {
           method: "POST",
-          headers: { "Content-Type": blob.type || "application/octet-stream" },
+          headers: { "Content-Type": baseContentType },
           body: blob,
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          console.warn(`Upload bukti (${type}) gagal:`, res.status, detail);
+          toast.warning(`Gagal mengunggah bukti ${type} (HTTP ${res.status}).`, { duration: Infinity });
+          return;
+        }
         const { storageId } = (await res.json()) as { storageId: Id<"_storage"> };
         await attachEvidence({ alarmId, storageId, type });
       } catch (err) {
         console.warn("Gagal upload bukti:", err);
+        toast.warning(
+          `Gagal mengunggah bukti ${type}${err instanceof Error ? `: ${err.message}` : ""}`,
+          { duration: Infinity },
+        );
       }
     },
     [generateUploadUrl, attachEvidence],
@@ -79,6 +93,14 @@ export function useEvidenceCapture() {
           if (shot < shots - 1) await new Promise((r) => setTimeout(r, intervalSec * 1000));
         }
       } catch (err) {
+        const name = err instanceof DOMException ? err.name : "";
+        const message =
+          name === "NotAllowedError"
+            ? "Izin kamera diblokir. Cek pengaturan izin situs ini di browser."
+            : name === "NotReadableError"
+              ? "Kamera sedang dipakai aplikasi lain."
+              : "Gagal mengambil foto bukti.";
+        toast.warning(message, { duration: Infinity });
         console.warn("Kamera tidak tersedia/izin ditolak:", err);
       } finally {
         stream?.getTracks().forEach((t) => t.stop());
@@ -95,7 +117,19 @@ export function useEvidenceCapture() {
           kind === "video" ? { video: { facingMode: "environment" }, audio: true } : { audio: true },
         );
         const chunks: BlobPart[] = [];
-        const recorder = new MediaRecorder(stream);
+        const preferredTypes =
+          kind === "video"
+            ? ["video/webm;codecs=vp8,opus", "video/webm", "video/mp4"]
+            : ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+        const mimeType = preferredTypes.find((t) => MediaRecorder.isTypeSupported(t));
+        if (!mimeType) {
+          toast.warning(
+            `Browser ini tidak mendukung format perekaman ${kind === "video" ? "video" : "audio"}. Coba pakai Chrome/Firefox versi terbaru.`,
+            { duration: Infinity },
+          );
+          return;
+        }
+        const recorder = new MediaRecorder(stream, { mimeType });
         recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
 
         const done = new Promise<Blob>((resolve) => {
@@ -108,6 +142,23 @@ export function useEvidenceCapture() {
         const blob = await done;
         void uploadBlob(alarmId, kind, blob);
       } catch (err) {
+        // Video butuh izin KAMERA + MIKROFON sekaligus dalam satu permintaan —
+        // kalau salah satunya diblokir (mic, meski kamera sudah "Allow"),
+        // seluruh permintaan gagal. Munculkan pesan yang jelas, jangan cuma
+        // console.warn, supaya user tahu apa yang perlu dicek.
+        const name = err instanceof DOMException ? err.name : "";
+        let message = `Gagal merekam ${kind === "video" ? "video" : "audio"}${err instanceof Error ? `: ${err.name} - ${err.message}` : ""}`;
+        if (name === "NotAllowedError") {
+          message =
+            kind === "video"
+              ? "Video butuh izin KAMERA dan MIKROFON. Cek pengaturan izin situs ini — kemungkinan salah satunya diblokir."
+              : "Izin mikrofon diblokir. Cek pengaturan izin situs ini di browser.";
+        } else if (name === "NotFoundError") {
+          message = `Perangkat ${kind === "video" ? "kamera/mikrofon" : "mikrofon"} tidak ditemukan.`;
+        } else if (name === "NotReadableError") {
+          message = `${kind === "video" ? "Kamera" : "Mikrofon"} sedang dipakai aplikasi lain.`;
+        }
+        toast.warning(message, { duration: Infinity });
         console.warn(`${kind} tidak tersedia/izin ditolak:`, err);
       } finally {
         stream?.getTracks().forEach((t) => t.stop());

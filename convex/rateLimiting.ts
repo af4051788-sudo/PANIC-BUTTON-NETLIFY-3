@@ -12,9 +12,14 @@ import { components } from "./_generated/api";
  */
 export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // A person triggering their own alarm (panic/silent/escort). Allows a
-  // burst of 5 (e.g. accidental double-taps, retries on flaky connection),
-  // refilling at 10/hour after that — far above any legitimate use pattern.
-  createAlarm: { kind: "token bucket", rate: 10, period: HOUR, capacity: 5 },
+  // burst of 8 (e.g. accidental double-taps, retries on flaky connection),
+  // refilling at 60/hour (~1 per minute) after that — this is deliberately
+  // fast: for a panic-button app, a token bucket that refills slowly risks
+  // silently blocking a genuine repeated trigger during a real emergency.
+  // This limit exists only to stop automated/bot abuse, never to slow down
+  // a real person. Users can also disable this entirely for themselves via
+  // Profile settings (panicRateLimiterEnabled).
+  createAlarm: { kind: "token bucket", rate: 60, period: HOUR, capacity: 8 },
 
   // Joining a group by invite code — throttles brute-forcing the 6-char
   // code. 5 attempts per minute, refilling slowly, is plenty for a human

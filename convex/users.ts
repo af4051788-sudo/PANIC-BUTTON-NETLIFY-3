@@ -36,6 +36,8 @@ export const updateProfile = mutation({
       v.array(v.union(v.literal("photo"), v.literal("audio"), v.literal("video"))),
     ),
     evidenceCaptureDurationSec: v.optional(v.number()),
+    panicHoldDurationSec: v.optional(v.number()),
+    panicRateLimiterEnabled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -53,6 +55,8 @@ export const updateProfile = mutation({
       evidenceCaptureEnabled: args.evidenceCaptureEnabled ?? user.evidenceCaptureEnabled,
       evidenceCaptureTypes: args.evidenceCaptureTypes ?? user.evidenceCaptureTypes,
       evidenceCaptureDurationSec: args.evidenceCaptureDurationSec ?? user.evidenceCaptureDurationSec,
+      panicHoldDurationSec: args.panicHoldDurationSec ?? user.panicHoldDurationSec,
+      panicRateLimiterEnabled: args.panicRateLimiterEnabled ?? user.panicRateLimiterEnabled,
     });
   },
 });

@@ -69,6 +69,8 @@ function ProfileForm() {
   const [evidenceEnabled, setEvidenceEnabled] = useState(false);
   const [evidenceTypes, setEvidenceTypes] = useState<Array<"photo" | "audio" | "video">>([]);
   const [evidenceDuration, setEvidenceDuration] = useState(20);
+  const [panicHoldDuration, setPanicHoldDuration] = useState(3);
+  const [panicRateLimiterEnabled, setPanicRateLimiterEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
@@ -81,6 +83,8 @@ function ProfileForm() {
     setEvidenceEnabled(user.evidenceCaptureEnabled ?? false);
     setEvidenceTypes(user.evidenceCaptureTypes ?? []);
     setEvidenceDuration(user.evidenceCaptureDurationSec ?? 20);
+    setPanicHoldDuration(user.panicHoldDurationSec ?? 3);
+    setPanicRateLimiterEnabled(user.panicRateLimiterEnabled ?? true);
     setInitialized(true);
   }
 
@@ -106,6 +110,8 @@ function ProfileForm() {
         evidenceCaptureEnabled: evidenceEnabled,
         evidenceCaptureTypes: evidenceTypes,
         evidenceCaptureDurationSec: evidenceDuration,
+        panicHoldDurationSec: panicHoldDuration,
+        panicRateLimiterEnabled,
       });
       toast.success("Profil berhasil disimpan.");
     } catch {
@@ -255,6 +261,41 @@ function ProfileForm() {
               </p>
             </div>
           )}
+        </div>
+
+        <div className="border-t border-border pt-4 space-y-2">
+          <Label className="flex items-center gap-2 text-muted-foreground">
+            <Shield className="size-4" /> Durasi Tekan-Tahan Tombol Panic
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Proteksi salah pencet — tombol baru mengirim sinyal setelah ditekan-tahan selama durasi ini.
+          </p>
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={1}
+              max={5}
+              step={1}
+              value={panicHoldDuration}
+              onChange={(e) => setPanicHoldDuration(Number(e.target.value))}
+              className="flex-1 accent-primary"
+            />
+            <span className="text-xs font-bold text-foreground w-10 text-right">{panicHoldDuration}s</span>
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-4 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <Label className="flex items-center gap-2 text-muted-foreground">
+              <Shield className="size-4" /> Batas Penekanan Alarm (Rate Limiter)
+            </Label>
+            <Switch checked={panicRateLimiterEnabled} onCheckedChange={setPanicRateLimiterEnabled} />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {panicRateLimiterEnabled
+              ? "Aktif (disarankan) — mencegah penyalahgunaan otomatis/bot. Penekanan asli oleh manusia tetap diberi jatah longgar dan tidak akan diblokir."
+              : "⚠️ Nonaktif — tombol panic TIDAK akan pernah dibatasi sistem, sekalipun ditekan berkali-kali beruntun. Matikan hanya jika kamu memahami risikonya."}
+          </p>
         </div>
       </div>
 

@@ -611,9 +611,10 @@ function PanicButtonCore() {
 
   const startPress = useCallback(() => {
     if (isAlarmActive) return;
+    const holdSec = currentUser?.panicHoldDurationSec ?? 3;
     pressStart.current = Date.now();
-    setCountdown(3);
-    let cd = 3;
+    setCountdown(holdSec);
+    let cd = holdSec;
     countdownTimer.current = setInterval(() => {
       cd -= 1;
       setCountdown(cd);
@@ -626,12 +627,12 @@ function PanicButtonCore() {
     }, 1000);
     const animate = () => {
       const elapsed = Date.now() - pressStart.current;
-      const progress = Math.min(elapsed / 3000, 1);
+      const progress = Math.min(elapsed / (holdSec * 1000), 1);
       setPressProgress(progress);
       if (progress < 1) rafRef.current = requestAnimationFrame(animate);
     };
     rafRef.current = requestAnimationFrame(animate);
-  }, [isAlarmActive, activatePanicAlarm, vibrate]);
+  }, [isAlarmActive, activatePanicAlarm, vibrate, currentUser]);
 
   const cancelPress = useCallback(() => {
     if (countdownTimer.current) clearInterval(countdownTimer.current);

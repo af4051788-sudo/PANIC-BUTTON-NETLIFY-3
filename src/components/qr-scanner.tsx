@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import jsQR from "jsqr";
 import { X, ScanLine } from "lucide-react";
 
@@ -78,8 +79,8 @@ export function QRScannerModal({ onScan, onClose, title = "Pindai Kode QR" }: QR
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] bg-black flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 bg-black/80">
         <p className="text-white font-bold text-sm">{title}</p>
         <button onClick={onClose} className="p-2 text-white cursor-pointer">
@@ -105,6 +106,7 @@ export function QRScannerModal({ onScan, onClose, title = "Pindai Kode QR" }: QR
       <p className="text-white/60 text-xs text-center pb-6 px-6">
         Arahkan kamera ke kode QR
       </p>
-    </div>
+    </div>,
+    document.body,
   );
 }
