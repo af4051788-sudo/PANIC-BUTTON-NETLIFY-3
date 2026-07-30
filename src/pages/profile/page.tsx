@@ -30,6 +30,7 @@ import {
   ChevronRight,
   Smartphone,
   BellRing,
+  Camera,
 } from "lucide-react";
 
 function ProfileForm() {
@@ -65,6 +66,9 @@ function ProfileForm() {
   const [emergencyContact, setEmergencyContact] = useState("");
   const [emergencyContactName, setEmergencyContactName] = useState("");
   const [locationPrivacy, setLocationPrivacy] = useState<"precise" | "area" | "anonymous">("precise");
+  const [evidenceEnabled, setEvidenceEnabled] = useState(false);
+  const [evidenceTypes, setEvidenceTypes] = useState<Array<"photo" | "audio" | "video">>([]);
+  const [evidenceDuration, setEvidenceDuration] = useState(20);
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
@@ -74,6 +78,9 @@ function ProfileForm() {
     setEmergencyContact(user.emergencyContact ?? "");
     setEmergencyContactName(user.emergencyContactName ?? "");
     setLocationPrivacy((user.locationPrivacy as "precise" | "area" | "anonymous") ?? "precise");
+    setEvidenceEnabled(user.evidenceCaptureEnabled ?? false);
+    setEvidenceTypes(user.evidenceCaptureTypes ?? []);
+    setEvidenceDuration(user.evidenceCaptureDurationSec ?? 20);
     setInitialized(true);
   }
 
@@ -90,7 +97,16 @@ function ProfileForm() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateProfile({ name, phone, emergencyContact, emergencyContactName, locationPrivacy });
+      await updateProfile({
+        name,
+        phone,
+        emergencyContact,
+        emergencyContactName,
+        locationPrivacy,
+        evidenceCaptureEnabled: evidenceEnabled,
+        evidenceCaptureTypes: evidenceTypes,
+        evidenceCaptureDurationSec: evidenceDuration,
+      });
       toast.success("Profil berhasil disimpan.");
     } catch {
       toast.error("Gagal menyimpan profil.");
@@ -165,6 +181,80 @@ function ProfileForm() {
               <SelectItem value="anonymous">Anonim (Koordinat samar)</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="border-t border-border pt-4 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <Label className="flex items-center gap-2 text-muted-foreground">
+              <Camera className="size-4" /> Bukti Otomatis Saat Panic
+            </Label>
+            <Switch checked={evidenceEnabled} onCheckedChange={setEvidenceEnabled} />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Ambil bukti otomatis saat kamu menekan tombol panic. Browser akan
+            meminta izin kamera/mikrofon secara terpisah — kamu tetap bisa menolaknya kapan saja.
+          </p>
+
+          {evidenceEnabled && (
+            <div className="space-y-3 pt-1">
+              <div className="flex gap-2">
+                {(["photo", "audio", "video"] as const).map((t) => {
+                  const active = evidenceTypes.includes(t);
+                  const label = t === "photo" ? "Foto" : t === "audio" ? "Audio" : "Video";
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() =>
+                        setEvidenceTypes((prev) =>
+                          active ? prev.filter((x) => x !== t) : [...prev, t],
+                        )
+                      }
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${active ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground border border-border"}`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {evidenceTypes.includes("photo") && (
+                <p className="text-[10px] text-muted-foreground bg-background rounded-lg px-2.5 py-2">
+                  📸 <b>Foto:</b> otomatis 3 kali jepret, jeda 5 detik antar jepretan — supaya lebih besar peluang dapat gambar yang jelas.
+                </p>
+              )}
+
+              {evidenceTypes.some((t) => t === "audio" || t === "video") && (
+                <div className="flex items-center gap-3">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">Durasi rekam</Label>
+                  <input
+                    type="range"
+                    min={10}
+                    max={30}
+                    step={1}
+                    value={evidenceDuration}
+                    onChange={(e) => setEvidenceDuration(Number(e.target.value))}
+                    className="flex-1 accent-primary"
+                  />
+                  <span className="text-xs font-bold text-foreground w-10 text-right">{evidenceDuration}s</span>
+                </div>
+              )}
+              {evidenceTypes.includes("audio") && (
+                <p className="text-[10px] text-muted-foreground bg-background rounded-lg px-2.5 py-2">
+                  🎙️ <b>Audio:</b> satu rekaman utuh (bukan terputus-putus) — supaya percakapan/suara di sekitar tetap punya konteks yang jelas.
+                </p>
+              )}
+              {evidenceTypes.includes("video") && (
+                <p className="text-[10px] text-muted-foreground bg-background rounded-lg px-2.5 py-2">
+                  🎥 <b>Video:</b> satu rekaman utuh, dibatasi maks 20 detik (video lebih berat untuk baterai/kuota — durasi ini dipangkas otomatis kalau slider di atas 20 detik).
+                </p>
+              )}
+
+              <p className="text-[10px] text-muted-foreground italic">
+                ⚠️ Kamera/mikrofon butuh izin eksplisit tiap browser/perangkat, dan otomatis dimatikan setelah selesai — bukan rekaman berkelanjutan.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

@@ -10,6 +10,8 @@ import { id as idLocale } from "date-fns/locale";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Skeleton } from "@/components/ui/skeleton.tsx";
+import QRCode from "qrcode";
+import { QRScannerModal } from "@/components/qr-scanner.tsx";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +39,8 @@ import {
   AlertTriangle,
   Settings,
   Check,
+  QrCode,
+  ScanLine,
 } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel.d.ts";
 
@@ -759,6 +763,7 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ inviteCode: string } | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const createGroup = useMutation(api.groups.createGroup);
 
   const handleCreate = async () => {
@@ -774,6 +779,15 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
     }
   };
 
+  useEffect(() => {
+    if (!result) return;
+    QRCode.toDataURL(JSON.stringify({ type: "group_invite", code: result.inviteCode }), {
+      width: 220,
+      margin: 2,
+      color: { dark: "#ffffff", light: "#1a0a0a" },
+    }).then(setQrDataUrl);
+  }, [result]);
+
   const copyCode = () => {
     if (result) { navigator.clipboard.writeText(result.inviteCode); toast.success("Kode undangan disalin!"); }
   };
@@ -786,6 +800,12 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
           <div className="space-y-4 text-center">
             <div className="w-16 h-16 rounded-full bg-green-500/10 border-2 border-green-500/30 flex items-center justify-center mx-auto"><Shield className="size-8 text-green-400" /></div>
             <p className="font-bold text-foreground">Grup berhasil dibuat!</p>
+            {qrDataUrl ? (
+              <img src={qrDataUrl} alt="QR undangan grup" className="rounded-xl w-48 h-48 mx-auto" />
+            ) : (
+              <Skeleton className="w-48 h-48 rounded-xl mx-auto" />
+            )}
+            <p className="text-xs text-muted-foreground">Anggota bisa scan QR ini untuk langsung gabung, atau pakai kode manual:</p>
             <div className="bg-background rounded-xl p-4 flex items-center justify-between">
               <span className="font-mono text-2xl font-black text-primary tracking-widest">{result.inviteCode}</span>
               <button onClick={copyCode} className="p-2 rounded-lg hover:bg-card cursor-pointer"><Copy className="size-4 text-muted-foreground" /></button>
@@ -807,13 +827,14 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
 function JoinGroupModal({ onClose }: { onClose: () => void }) {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const joinGroup = useMutation(api.groups.joinGroup);
 
-  const handleJoin = async () => {
-    if (!code.trim()) return;
+  const doJoin = async (inviteCode: string) => {
+    if (!inviteCode.trim()) return;
     setLoading(true);
     try {
-      await joinGroup({ inviteCode: code.trim() });
+      await joinGroup({ inviteCode: inviteCode.trim() });
       toast.success("Berhasil bergabung ke grup!");
       onClose();
     } catch (e) {
@@ -824,14 +845,74 @@ function JoinGroupModal({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const handleJoin = () => doJoin(code);
+
+  const handleScan = (data: string) => {
+    setShowScanner(false);
+    let scannedCode = data.trim();
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed?.type === "group_invite" && typeof parsed.code === "string") {
+        scannedCode = parsed.code;
+      }
+    } catch {
+      // bukan JSON — anggap saja isinya langsung kode undangan mentah
+    }
+    scannedCode = scannedCode.toUpperCase();
+    if (!/^[A-Z0-9]{6}$/.test(scannedCode)) {
+      toast.error("QR tidak berisi kode undangan grup yang valid.");
+      return;
+    }
+    setCode(scannedCode);
+    void doJoin(scannedCode); // auto-submit setelah scan sukses
+  };
+
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="bg-card border-border max-w-sm">
         <DialogHeader><DialogTitle className="flex items-center gap-2"><LogIn className="size-5 text-primary" /> Gabung Grup</DialogTitle></DialogHeader>
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">Masukkan kode undangan 6 karakter dari admin grup:</p>
+          <p className="text-sm text-muted-foreground">Masukkan kode undangan 6 karakter dari admin grup, atau scan QR-nya:</p>
           <Input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="ABC123" maxLength={6} className="bg-background border-border text-center text-xl font-mono tracking-widest font-bold" />
+          <Button variant="secondary" className="w-full gap-2" onClick={() => setShowScanner(true)}>
+            <QrCode className="size-4" /> Scan QR Undangan
+          </Button>
           <Button onClick={handleJoin} disabled={loading || code.length !== 6} className="w-full">{loading ? "Bergabung..." : "Gabung Sekarang"}</Button>
+        </div>
+      </DialogContent>
+      {showScanner && (
+        <QRScannerModal
+          title="Scan QR Undangan Grup"
+          onScan={handleScan}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
+    </Dialog>
+  );
+}
+
+function InviteQRModal({ inviteCode, onClose }: { inviteCode: string; onClose: () => void }) {
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    QRCode.toDataURL(JSON.stringify({ type: "group_invite", code: inviteCode }), {
+      width: 240,
+      margin: 2,
+      color: { dark: "#ffffff", light: "#1a0a0a" },
+    }).then(setQrDataUrl);
+  }, [inviteCode]);
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="bg-card border-border max-w-sm">
+        <DialogHeader><DialogTitle className="text-center">QR Undangan Grup</DialogTitle></DialogHeader>
+        <div className="flex flex-col items-center gap-3 py-2">
+          {qrDataUrl ? (
+            <img src={qrDataUrl} alt="QR undangan grup" className="rounded-xl w-56 h-56" />
+          ) : (
+            <Skeleton className="w-56 h-56 rounded-xl" />
+          )}
+          <p className="font-mono text-xl font-black text-primary tracking-widest">{inviteCode}</p>
         </div>
       </DialogContent>
     </Dialog>
@@ -845,6 +926,7 @@ function CommunityInner() {
   const [showJoin, setShowJoin] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<Id<"groups"> | null>(null);
   const [activeTab, setActiveTab] = useState<"groups" | "inbox">("groups");
+  const [showInviteQR, setShowInviteQR] = useState(false);
 
   if (groups === undefined) {
     return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}</div>;
@@ -857,13 +939,19 @@ function CommunityInner() {
         {group && (
           <div className="mb-4 bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center"><Shield className="size-5 text-primary" /></div>
-            <div>
+            <div className="flex-1 min-w-0">
               <p className="font-bold text-foreground">{group.name}</p>
               <p className="text-xs text-muted-foreground">{group.memberCount} anggota · Kode: <span className="font-mono text-primary">{group.inviteCode}</span></p>
             </div>
+            <button onClick={() => setShowInviteQR(true)} className="p-2 rounded-lg hover:bg-background cursor-pointer flex-shrink-0">
+              <QrCode className="size-5 text-muted-foreground" />
+            </button>
           </div>
         )}
         <GroupDetail groupId={selectedGroupId} onBack={() => setSelectedGroupId(null)} />
+        {showInviteQR && group && (
+          <InviteQRModal inviteCode={group.inviteCode} onClose={() => setShowInviteQR(false)} />
+        )}
       </div>
     );
   }
@@ -935,7 +1023,7 @@ export default function CommunityPage() {
           <p className="text-xs text-muted-foreground">Grup keamanan RT/RW</p>
         </div>
       </div>
-      <motion.div className="max-w-lg mx-auto px-4 py-6 pb-24" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+      <motion.div className="max-w-lg mx-auto px-4 py-6" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
         <Authenticated><CommunityInner /></Authenticated>
       </motion.div>
     </div>

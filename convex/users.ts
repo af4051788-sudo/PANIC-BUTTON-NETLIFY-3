@@ -31,6 +31,11 @@ export const updateProfile = mutation({
     emergencyContact: v.optional(v.string()),
     emergencyContactName: v.optional(v.string()),
     locationPrivacy: v.optional(v.string()),
+    evidenceCaptureEnabled: v.optional(v.boolean()),
+    evidenceCaptureTypes: v.optional(
+      v.array(v.union(v.literal("photo"), v.literal("audio"), v.literal("video"))),
+    ),
+    evidenceCaptureDurationSec: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -45,6 +50,9 @@ export const updateProfile = mutation({
       emergencyContact: args.emergencyContact,
       emergencyContactName: args.emergencyContactName,
       locationPrivacy: args.locationPrivacy,
+      evidenceCaptureEnabled: args.evidenceCaptureEnabled ?? user.evidenceCaptureEnabled,
+      evidenceCaptureTypes: args.evidenceCaptureTypes ?? user.evidenceCaptureTypes,
+      evidenceCaptureDurationSec: args.evidenceCaptureDurationSec ?? user.evidenceCaptureDurationSec,
     });
   },
 });

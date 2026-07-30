@@ -255,7 +255,7 @@ GND           →  Katoda semua LED`.trim();
         </div>
       </div>
 
-      <motion.div className="max-w-3xl mx-auto px-4 py-6 pb-24 space-y-4" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+      <motion.div className="max-w-3xl mx-auto px-4 py-6 space-y-4" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 flex items-start gap-3">
           <AlertTriangle className="size-5 text-yellow-400 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">

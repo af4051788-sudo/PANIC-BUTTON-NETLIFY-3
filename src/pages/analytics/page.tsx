@@ -34,6 +34,46 @@ import {
 } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel.d.ts";
 
+function AlarmEvidenceSection({ alarmId }: { alarmId: Id<"alarms"> }) {
+  const [open, setOpen] = useState(false);
+  const evidence = useQuery(api.evidence.getAlarmEvidence, open ? { alarmId } : "skip");
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="text-xs text-primary underline cursor-pointer"
+      >
+        {open ? "Sembunyikan bukti" : "Lihat bukti terlampir"}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          {evidence === undefined ? (
+            <p className="text-[10px] text-muted-foreground">Memuat...</p>
+          ) : evidence.length === 0 ? (
+            <p className="text-[10px] text-muted-foreground">Tidak ada bukti terlampir untuk alarm ini.</p>
+          ) : (
+            evidence.map((e) => {
+              if (!e.url) return null;
+              if (e.type === "photo") {
+                return (
+                  <a key={e.id} href={e.url} target="_blank" rel="noopener noreferrer" className="block">
+                    <img src={e.url} alt="Bukti foto" className="rounded-lg max-h-32 w-full object-cover" />
+                  </a>
+                );
+              }
+              if (e.type === "video") {
+                return <video key={e.id} src={e.url} controls className="rounded-lg w-full max-h-32" />;
+              }
+              return <audio key={e.id} src={e.url} controls className="w-full h-8" />;
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const CATEGORIES = [
   { value: "fire", label: "Kebakaran", icon: Flame, color: "text-orange-400" },
   { value: "theft", label: "Pencurian", icon: ShieldOff, color: "text-red-400" },
@@ -185,6 +225,7 @@ function AlarmHistory() {
                     Tandai alarm palsu
                   </button>
                 )}
+                <AlarmEvidenceSection alarmId={alarm._id} />
               </div>
             );
           })
@@ -207,7 +248,7 @@ export default function AnalyticsPage() {
           <p className="text-xs text-muted-foreground">Riwayat dan pola insiden Anda</p>
         </div>
       </div>
-      <motion.div className="max-w-lg mx-auto px-4 py-6 pb-24" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+      <motion.div className="max-w-lg mx-auto px-4 py-6" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
         <Authenticated><AlarmHistory /></Authenticated>
       </motion.div>
     </div>

@@ -434,7 +434,7 @@ export default function AdminPage() {
           <p className="text-xs text-muted-foreground">Monitoring {"&"} Kontrol Real-time</p>
         </div>
       </div>
-      <motion.div className="max-w-2xl mx-auto px-4 py-6 pb-24" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+      <motion.div className="max-w-2xl mx-auto px-4 py-6" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
         <Authenticated>
           <AdminSetupGate>
             <AdminDashboardInner />

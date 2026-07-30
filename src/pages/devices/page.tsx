@@ -32,6 +32,7 @@ import {
 import type { Id } from "@/convex/_generated/dataModel.d.ts";
 import { formatDistanceToNow } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
+import { QRScannerModal } from "@/components/qr-scanner.tsx";
 
 type DeviceDoc = {
   _id: Id<"devices">;
@@ -606,8 +607,68 @@ function CommunityDeviceManager() {
   );
 }
 
+function DeviceQRScanResultModal({
+  data,
+  onClose,
+}: {
+  data: { deviceId: string; pairingCode: string };
+  onClose: () => void;
+}) {
+  const copy = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} disalin!`);
+  };
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="bg-card border-border max-w-sm">
+        <DialogHeader><DialogTitle>Hasil Scan QR Device</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="bg-background rounded-xl p-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">Device ID</p>
+              <p className="font-mono font-bold text-foreground">{data.deviceId}</p>
+            </div>
+            <button onClick={() => copy(data.deviceId, "Device ID")} className="p-2 rounded-lg hover:bg-card cursor-pointer">
+              <Code2 className="size-4 text-muted-foreground" />
+            </button>
+          </div>
+          <div className="bg-background rounded-xl p-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">Pairing Code</p>
+              <p className="font-mono font-bold text-primary text-lg">{data.pairingCode}</p>
+            </div>
+            <button onClick={() => copy(data.pairingCode, "Pairing code")} className="p-2 rounded-lg hover:bg-card cursor-pointer">
+              <Code2 className="size-4 text-muted-foreground" />
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Tinggal salin dua nilai ini ke kode firmware Arduino (DEVICE_ID & PAIRING_CODE) di halaman Firmware.
+          </p>
+          <Button onClick={onClose} className="w-full">Selesai</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function DevicesPage() {
   const navigate = useNavigate();
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanResult, setScanResult] = useState<{ deviceId: string; pairingCode: string } | null>(null);
+
+  const handleScan = (raw: string) => {
+    setShowScanner(false);
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.deviceId === "string" && typeof parsed?.pairingCode === "string") {
+        setScanResult({ deviceId: parsed.deviceId, pairingCode: parsed.pairingCode });
+        return;
+      }
+    } catch {
+      // bukan format QR device yang dikenal
+    }
+    toast.error("QR ini bukan QR pairing device yang valid.");
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -615,10 +676,13 @@ export default function DevicesPage() {
         <button onClick={() => navigate("/profile")} className="p-2 rounded-lg hover:bg-card transition-colors cursor-pointer">
           <ArrowLeft className="size-5 text-foreground" />
         </button>
-        <div>
+        <div className="flex-1">
           <h1 className="font-bold text-foreground">Perangkat Wemos D1</h1>
           <p className="text-xs text-muted-foreground">Kelola alarm fisik IoT</p>
         </div>
+        <button onClick={() => setShowScanner(true)} className="p-2 rounded-lg hover:bg-card transition-colors cursor-pointer" title="Scan QR Device">
+          <QrCode className="size-5 text-foreground" />
+        </button>
       </div>
       <motion.div className="max-w-md mx-auto px-4 py-6 space-y-6" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
         <Authenticated>
@@ -627,6 +691,10 @@ export default function DevicesPage() {
           <CommunityDeviceManager />
         </Authenticated>
       </motion.div>
+      {showScanner && (
+        <QRScannerModal title="Scan QR Device" onScan={handleScan} onClose={() => setShowScanner(false)} />
+      )}
+      {scanResult && <DeviceQRScanResultModal data={scanResult} onClose={() => setScanResult(null)} />}
     </div>
   );
 }

@@ -15,6 +15,7 @@ import type * as auth from "../auth.js";
 import type * as communityDevices from "../communityDevices.js";
 import type * as crons from "../crons.js";
 import type * as devices from "../devices.js";
+import type * as evidence from "../evidence.js";
 import type * as groups from "../groups.js";
 import type * as http from "../http.js";
 import type * as iot from "../iot.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   communityDevices: typeof communityDevices;
   crons: typeof crons;
   devices: typeof devices;
+  evidence: typeof evidence;
   groups: typeof groups;
   http: typeof http;
   iot: typeof iot;

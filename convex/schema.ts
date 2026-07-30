@@ -12,6 +12,14 @@ export default defineSchema({
     emergencyContactName: v.optional(v.string()),
     locationPrivacy: v.optional(v.string()),
     role: v.optional(v.string()), // "admin" | "user"
+    // Fase 6: bukti otomatis saat panic — WAJIB izin eksplisit (getUserMedia
+    // browser tetap akan minta izin terpisah tiap kali walau ini true; field
+    // ini cuma preferensi "boleh dicoba", bukan bypass izin OS/browser).
+    evidenceCaptureEnabled: v.optional(v.boolean()),
+    evidenceCaptureTypes: v.optional(
+      v.array(v.union(v.literal("photo"), v.literal("audio"), v.literal("video"))),
+    ),
+    evidenceCaptureDurationSec: v.optional(v.number()),
   })
     // Index ini WAJIB ada — @convex-dev/auth pakai ini untuk lookup user
     // saat sign-in/sign-up. Hilang = login/register akan gagal diam-diam.
@@ -133,4 +141,14 @@ export default defineSchema({
     category: v.union(v.literal("panic_silent"), v.literal("escort")),
     targetDeviceIds: v.array(v.id("devices")),
   }).index("by_owner", ["ownerType", "ownerId", "category"]),
+
+  // Fase 6: bukti otomatis (foto/audio/video singkat) yang diambil saat
+  // panic ditekan, HANYA kalau user sudah eksplisit mengizinkan di Profil.
+  alarmEvidence: defineTable({
+    alarmId: v.id("alarms"),
+    userId: v.id("users"),
+    type: v.union(v.literal("photo"), v.literal("audio"), v.literal("video")),
+    storageId: v.id("_storage"),
+    capturedAt: v.string(),
+  }).index("by_alarm", ["alarmId"]),
 });

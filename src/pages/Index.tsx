@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, memo, type RefObject } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useMutation, useQuery } from "convex/react";
 import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
@@ -6,11 +6,11 @@ import { api } from "@/convex/_generated/api.js";
 import { SignInButton } from "@/components/ui/signin.tsx";
 import { Skeleton } from "@/components/ui/skeleton.tsx";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
 import { useIncomingAlarms } from "@/hooks/use-alarm-context.tsx";
+import { useEvidenceCapture } from "@/hooks/use-evidence-capture.ts";
 import {
-  ShieldAlert, Bell, BellOff, MapPin, Wifi, User,
-  LayoutDashboard, ShieldCheck, Users, BarChart2, AlertTriangle, ExternalLink,
+  ShieldAlert, Bell, BellOff, MapPin, Wifi,
+  ShieldCheck, Users, AlertTriangle, ExternalLink,
   ChevronDown, ChevronUp,
 } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel.d.ts";
@@ -92,25 +92,26 @@ interface PanicBtnProps {
   incomingNames: string[];
   alarmType: "panic" | "silent" | null;
   countdown: number | null;
-  progressCircleRef: RefObject<SVGCircleElement | null>;
+  pressProgress: number;
   onPointerDown: () => void;
   onPointerUp: () => void;
   onClick: () => void;
 }
 
-const PanicBtn = memo(function PanicBtn({
+function PanicBtn({
   isAlarmActive,
   hasIncoming,
   incomingNames,
   alarmType,
   countdown,
-  progressCircleRef,
+  pressProgress,
   onPointerDown,
   onPointerUp,
   onClick,
 }: PanicBtnProps) {
   const radius = 126;
   const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference * (1 - pressProgress);
 
   // Dua status aktif bersamaan (alarm sendiri aktif + ada alarm masuk) →
   // warna tombol bergantian setiap ~1.8 detik sebagai tanda "mode ganda".
@@ -179,14 +180,15 @@ const PanicBtn = memo(function PanicBtn({
         style={{ left: -24, top: -24 }}
       >
         <circle cx={(280 + 48) / 2} cy={(280 + 48) / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="5" />
-        <circle
-          ref={progressCircleRef}
-          cx={(280 + 48) / 2} cy={(280 + 48) / 2} r={radius}
-          fill="none" stroke={colorScheme.ring} strokeWidth="5"
-          strokeDasharray={circumference} strokeDashoffset={circumference}
-          strokeLinecap="round"
-          style={{ opacity: 0 }}
-        />
+        {pressProgress > 0 && (
+          <circle
+            cx={(280 + 48) / 2} cy={(280 + 48) / 2} r={radius}
+            fill="none" stroke={colorScheme.ring} strokeWidth="5"
+            strokeDasharray={circumference} strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            style={{ transition: "stroke-dashoffset 0.05s linear" }}
+          />
+        )}
       </svg>
 
       {/* Button body */}
@@ -313,7 +315,7 @@ const PanicBtn = memo(function PanicBtn({
       </motion.div>
     </div>
   );
-});
+}
 
 // ── Incoming alarm banner (below button) ─────────────────────────────────────
 // Reusable "X orang merespon" pill that expands into a name list. Used both
@@ -362,6 +364,34 @@ function ResponderListButton({ alarmId, responderCount }: { alarmId: string; res
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// Menampilkan bukti (foto/audio/video) yang dilampirkan ke sebuah alarm —
+// akses sudah digating di server (pemilik, responder, atau admin grup saja).
+function AlarmEvidenceViewer({ alarmId }: { alarmId: string }) {
+  const evidence = useQuery(api.evidence.getAlarmEvidence, { alarmId: alarmId as Id<"alarms"> });
+
+  if (!evidence || evidence.length === 0) return null;
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      <p className="text-[10px] font-bold text-white/60 uppercase tracking-wide">Bukti Terlampir</p>
+      {evidence.map((e) => {
+        if (!e.url) return null;
+        if (e.type === "photo") {
+          return (
+            <a key={e.id} href={e.url} target="_blank" rel="noopener noreferrer" className="block">
+              <img src={e.url} alt="Bukti foto" className="rounded-lg max-h-40 w-full object-cover" />
+            </a>
+          );
+        }
+        if (e.type === "video") {
+          return <video key={e.id} src={e.url} controls className="rounded-lg w-full max-h-40" />;
+        }
+        return <audio key={e.id} src={e.url} controls className="w-full h-8" />;
+      })}
     </div>
   );
 }
@@ -441,7 +471,12 @@ function IncomingAlarmBanner({
               {a.responderCount > 0 && (
                 <ResponderListButton alarmId={a.alarmId} responderCount={a.responderCount} />
               )}
-              {a.respondedByMe && <AlarmLocationButton alarmId={a.alarmId} />}
+              {a.respondedByMe && (
+                <>
+                  <AlarmLocationButton alarmId={a.alarmId} />
+                  <AlarmEvidenceViewer alarmId={a.alarmId} />
+                </>
+              )}
             </motion.div>
           ))}
         </motion.div>
@@ -452,9 +487,8 @@ function IncomingAlarmBanner({
 
 // ── Main core component ───────────────────────────────────────────────────────
 function PanicButtonCore() {
-  const navigate = useNavigate();
   const { incomingAlarms, respondToAlarmId } = useIncomingAlarms();
-  const progressCircleRef = useRef<SVGCircleElement | null>(null);
+  const [pressProgress, setPressProgress] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isAlarmActive, setIsAlarmActive] = useState(false);
   const [alarmType, setAlarmType] = useState<"panic" | "silent" | null>(null);
@@ -469,6 +503,8 @@ function PanicButtonCore() {
   const triggerAlarm = useMutation(api.alarms.triggerAlarm);
   const resolveAlarm = useMutation(api.alarms.resolveAlarm);
   const activeAlarm = useQuery(api.alarms.getMyActiveAlarm, {});
+  const currentUser = useQuery(api.users.getCurrentUser, {});
+  const { captureAndUpload } = useEvidenceCapture();
   const customTitle = useQuery(api.groups.getMyPrimaryGroupTitle, {});
 
   const hasIncoming = incomingAlarms.length > 0;
@@ -507,6 +543,18 @@ function PanicButtonCore() {
         setCurrentAlarmId(id as Id<"alarms">);
         setIsAlarmActive(true);
         setAlarmType(type);
+
+        // Bukti otomatis: HANYA jika user sudah eksplisit mengizinkan di
+        // Profil. Fire-and-forget — tidak pernah memblokir/menggagalkan
+        // alarm, browser tetap akan minta izin kamera/mic terpisah.
+        if (currentUser?.evidenceCaptureEnabled && currentUser.evidenceCaptureTypes?.length) {
+          void captureAndUpload(
+            id as Id<"alarms">,
+            currentUser.evidenceCaptureTypes,
+            currentUser.evidenceCaptureDurationSec ?? 20,
+          );
+        }
+
         if (type === "panic") {
           toast.error("ALARM AKTIF! Sinyal darurat dikirim.", { duration: 5000 });
         } else {
@@ -551,16 +599,10 @@ function PanicButtonCore() {
         activatePanicAlarm("panic");
       }
     }, 1000);
-    const radius = 126;
-    const circumference = 2 * Math.PI * radius;
     const animate = () => {
       const elapsed = Date.now() - pressStart.current;
       const progress = Math.min(elapsed / 3000, 1);
-      const circle = progressCircleRef.current;
-      if (circle) {
-        circle.style.opacity = progress > 0 ? "1" : "0";
-        circle.setAttribute("stroke-dashoffset", String(circumference * (1 - progress)));
-      }
+      setPressProgress(progress);
       if (progress < 1) rafRef.current = requestAnimationFrame(animate);
     };
     rafRef.current = requestAnimationFrame(animate);
@@ -569,11 +611,7 @@ function PanicButtonCore() {
   const cancelPress = useCallback(() => {
     if (countdownTimer.current) clearInterval(countdownTimer.current);
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    const circle = progressCircleRef.current;
-    if (circle) {
-      circle.style.opacity = "0";
-      circle.setAttribute("stroke-dashoffset", String(2 * Math.PI * 126));
-    }
+    setPressProgress(0);
     setCountdown(null);
   }, []);
 
@@ -601,7 +639,7 @@ function PanicButtonCore() {
   const displayTitle = customTitle ?? "PANIC BUTTON";
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-background px-4 select-none pb-20">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-background px-4 select-none">
       {/* Title */}
       <motion.div
         className="mb-6 text-center"
@@ -661,7 +699,7 @@ function PanicButtonCore() {
           incomingNames={incomingNames}
           alarmType={alarmType}
           countdown={countdown}
-          progressCircleRef={progressCircleRef}
+          pressProgress={pressProgress}
           onPointerDown={startPress}
           onPointerUp={cancelPress}
           onClick={handleButtonClick}
@@ -673,8 +711,11 @@ function PanicButtonCore() {
 
       {/* Siapa yang sudah merespon alarm SAYA — muncul begitu ada yang merespon */}
       {isAlarmActive && activeAlarm && (
-        <div className="relative z-20 mt-8 flex flex-col items-center">
+        <div className="relative z-20 mt-8 flex flex-col items-center w-full max-w-xs">
           <ResponderListButton alarmId={activeAlarm._id} responderCount={activeAlarm.responderCount} />
+          <div className="w-full">
+            <AlarmEvidenceViewer alarmId={activeAlarm._id} />
+          </div>
         </div>
       )}
 
@@ -720,30 +761,6 @@ function PanicButtonCore() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-background/90 backdrop-blur border-t border-border flex justify-around py-3 z-20">
-        <button className="flex flex-col items-center gap-1 text-primary cursor-pointer">
-          <ShieldAlert className="size-5" />
-          <span className="text-xs font-medium">Panic</span>
-        </button>
-        <button onClick={() => navigate("/community")} className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
-          <Users className="size-5" />
-          <span className="text-xs">Komunitas</span>
-        </button>
-        <button onClick={() => navigate("/admin")} className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
-          <LayoutDashboard className="size-5" />
-          <span className="text-xs">Admin</span>
-        </button>
-        <button onClick={() => navigate("/analytics")} className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
-          <BarChart2 className="size-5" />
-          <span className="text-xs">Laporan</span>
-        </button>
-        <button onClick={() => navigate("/profile")} className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
-          <User className="size-5" />
-          <span className="text-xs">Profil</span>
-        </button>
-      </nav>
     </div>
   );
 }
