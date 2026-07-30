@@ -1,0 +1,12 @@
+[build]
+  command = "pnpm build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA fallback — setara dengan rewrite rule di vercel.json
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
