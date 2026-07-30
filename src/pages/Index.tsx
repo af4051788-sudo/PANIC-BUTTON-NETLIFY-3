@@ -372,12 +372,37 @@ function ResponderListButton({ alarmId, responderCount }: { alarmId: string; res
 // akses sudah digating di server (pemilik, responder, atau admin grup saja).
 function AlarmEvidenceViewer({ alarmId }: { alarmId: string }) {
   const evidence = useQuery(api.evidence.getAlarmEvidence, { alarmId: alarmId as Id<"alarms"> });
+  const [expanded, setExpanded] = useState(false);
 
   if (!evidence || evidence.length === 0) return null;
 
+  // Privasi: default tersembunyi. Cuma tampilkan notifikasi ringkas bahwa
+  // bukti tersedia — konten sebenarnya (foto/audio/video) baru terbuka
+  // kalau user sengaja klik.
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="mt-2 w-full flex items-center justify-center gap-1.5 text-xs font-bold text-white/70 bg-white/5 border border-white/15 rounded-lg px-3 py-2 hover:bg-white/10 transition-colors"
+      >
+        📎 Bukti tersedia ({evidence.length}) — klik untuk lihat
+      </button>
+    );
+  }
+
   return (
     <div className="mt-2 space-y-1.5">
-      <p className="text-[10px] font-bold text-white/60 uppercase tracking-wide">Bukti Terlampir</p>
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-bold text-white/60 uppercase tracking-wide">Bukti Terlampir</p>
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="text-[10px] font-bold text-white/50 hover:text-white/80"
+        >
+          Sembunyikan
+        </button>
+      </div>
       {evidence.map((e) => {
         if (!e.url) return null;
         if (e.type === "photo") {

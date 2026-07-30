@@ -125,11 +125,22 @@ export function useEvidenceCapture() {
    */
   const captureAndUpload = useCallback(
     async (alarmId: Id<"alarms">, types: EvidenceType[], durationSec: number) => {
-      const tasks: Promise<void>[] = [];
-      if (types.includes("photo")) tasks.push(capturePhotoBurst(alarmId, 3, 5));
-      if (types.includes("audio")) tasks.push(recordClip(alarmId, "audio", Math.max(10, Math.min(durationSec, 30))));
-      if (types.includes("video")) tasks.push(recordClip(alarmId, "video", Math.max(5, Math.min(durationSec, 20))));
-      await Promise.all(tasks);
+      // Audio tidak pakai kamera, jadi aman dijalankan paralel dengan yang lain.
+      const parallelTasks: Promise<void>[] = [];
+      if (types.includes("audio")) {
+        parallelTasks.push(recordClip(alarmId, "audio", Math.max(10, Math.min(durationSec, 30))));
+      }
+
+      // Foto dan video SAMA-SAMA butuh kamera — di banyak browser mobile,
+      // hanya satu stream kamera yang boleh aktif dalam satu waktu. Kalau
+      // dijalankan bersamaan (Promise.all), salah satunya bisa gagal diam-diam
+      // karena kamera sedang dipakai proses yang lain. Jalankan berurutan.
+      const cameraTask = (async () => {
+        if (types.includes("photo")) await capturePhotoBurst(alarmId, 3, 5);
+        if (types.includes("video")) await recordClip(alarmId, "video", Math.max(5, Math.min(durationSec, 20)));
+      })();
+
+      await Promise.all([...parallelTasks, cameraTask]);
     },
     [capturePhotoBurst, recordClip],
   );
