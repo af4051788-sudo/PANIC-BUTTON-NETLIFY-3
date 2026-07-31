@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { enforceQuota } from "./storageQuota";
 
 /** Client calls this first to get a short-lived URL it can POST the captured blob to. */
 export const generateEvidenceUploadUrl = mutation({
@@ -39,6 +40,13 @@ export const attachEvidenceToAlarm = mutation({
       storageId: args.storageId,
       capturedAt: new Date().toISOString(),
     });
+
+    // Cek kuota SETIAP kali ada bukti baru masuk — kalau sudah lewat batas,
+    // langsung hapus yang paling lama (termasuk mungkin bukti yang baru saja
+    // masuk ini, kalau memang itu yang paling lama secara relatif — walau
+    // secara praktis hampir tidak pernah terjadi karena bukti baru selalu
+    // paling baru capturedAt-nya).
+    await enforceQuota(ctx);
   },
 });
 

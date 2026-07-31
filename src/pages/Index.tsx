@@ -372,9 +372,22 @@ function ResponderListButton({ alarmId, responderCount }: { alarmId: string; res
 // akses sudah digating di server (pemilik, responder, atau admin grup saja).
 function AlarmEvidenceViewer({ alarmId }: { alarmId: string }) {
   const evidence = useQuery(api.evidence.getAlarmEvidence, { alarmId: alarmId as Id<"alarms"> });
+  const deleteEvidence = useMutation(api.evidence.deleteAlarmEvidence);
   const [expanded, setExpanded] = useState(false);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   if (!evidence || evidence.length === 0) return null;
+
+  const handleDelete = async (evidenceId: Id<"alarmEvidence">) => {
+    try {
+      await deleteEvidence({ evidenceId });
+      toast.success("Bukti dihapus.");
+    } catch {
+      toast.error("Gagal menghapus bukti.");
+    } finally {
+      setConfirmId(null);
+    }
+  };
 
   // Privasi: default tersembunyi. Cuma tampilkan notifikasi ringkas bahwa
   // bukti tersedia — konten sebenarnya (foto/audio/video) baru terbuka
@@ -405,17 +418,33 @@ function AlarmEvidenceViewer({ alarmId }: { alarmId: string }) {
       </div>
       {evidence.map((e) => {
         if (!e.url) return null;
-        if (e.type === "photo") {
-          return (
-            <a key={e.id} href={e.url} target="_blank" rel="noopener noreferrer" className="block">
-              <img src={e.url} alt="Bukti foto" className="rounded-lg max-h-40 w-full object-cover" />
-            </a>
-          );
-        }
-        if (e.type === "video") {
-          return <video key={e.id} src={e.url} controls className="rounded-lg w-full max-h-40" />;
-        }
-        return <audio key={e.id} src={e.url} controls className="w-full h-8" />;
+        return (
+          <div key={e.id} className="relative group">
+            {e.type === "photo" && (
+              <a href={e.url} target="_blank" rel="noopener noreferrer" className="block">
+                <img src={e.url} alt="Bukti foto" className="rounded-lg max-h-40 w-full object-cover" />
+              </a>
+            )}
+            {e.type === "video" && <video src={e.url} controls className="rounded-lg w-full max-h-40" />}
+            {e.type === "audio" && <audio src={e.url} controls className="w-full h-8" />}
+
+            {confirmId === e.id ? (
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[10px] text-red-300 font-bold">Hapus bukti ini?</span>
+                <button onClick={() => handleDelete(e.id as Id<"alarmEvidence">)} className="text-[10px] font-bold text-red-300 underline cursor-pointer">Ya, Hapus</button>
+                <button onClick={() => setConfirmId(null)} className="text-[10px] text-white/60 underline cursor-pointer">Batal</button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmId(e.id)}
+                className="absolute top-1 right-1 p-1 rounded-md bg-black/50 text-white/80 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                title="Hapus bukti ini"
+              >
+                🗑
+              </button>
+            )}
+          </div>
+        );
       })}
     </div>
   );

@@ -169,9 +169,49 @@ export const submitIncidentReport = mutation({
 });
 
 /**
- * Tandai alarm sebagai alarm palsu (false alarm).
- * Hanya bisa dilakukan oleh pemilik alarm sendiri.
+ * Hapus satu riwayat alarm milik sendiri, beserta semua bukti (foto/audio/
+ * video — termasuk file di storage-nya) dan data respons terkait. Alarm yang
+ * masih "active" tidak boleh dihapus — selesaikan/tandai dulu, supaya tidak
+ * ada yang tidak sengaja menghapus jejak darurat yang masih berlangsung.
  */
+export const deleteAlarm = mutation({
+  args: { alarmId: v.id("alarms") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
+
+    const alarm = await ctx.db.get(args.alarmId);
+    if (!alarm) return; // sudah tidak ada — anggap sukses (idempotent)
+    if (alarm.userId !== userId) {
+      throw new ConvexError({ message: "Bukan alarm Anda.", code: "FORBIDDEN" });
+    }
+    if (alarm.status === "active") {
+      throw new ConvexError({
+        message: "Alarm masih aktif — selesaikan atau tandai palsu dulu sebelum menghapus.",
+        code: "STILL_ACTIVE",
+      });
+    }
+
+    const evidence = await ctx.db
+      .query("alarmEvidence")
+      .withIndex("by_alarm", (q) => q.eq("alarmId", args.alarmId))
+      .collect();
+    for (const e of evidence) {
+      await ctx.storage.delete(e.storageId);
+      await ctx.db.delete(e._id);
+    }
+
+    const responses = await ctx.db
+      .query("alarmResponses")
+      .withIndex("by_alarm", (q) => q.eq("alarmId", args.alarmId))
+      .collect();
+    for (const r of responses) {
+      await ctx.db.delete(r._id);
+    }
+
+    await ctx.db.delete(args.alarmId);
+  },
+});
 export const markFalseAlarm = mutation({
   args: { alarmId: v.id("alarms") },
   handler: async (ctx, args) => {

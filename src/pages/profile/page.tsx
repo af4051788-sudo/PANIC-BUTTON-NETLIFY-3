@@ -31,6 +31,7 @@ import {
   Smartphone,
   BellRing,
   Camera,
+  HardDrive,
 } from "lucide-react";
 
 function ProfileForm() {
@@ -188,6 +189,8 @@ function ProfileForm() {
             </SelectContent>
           </Select>
         </div>
+
+        <StorageQuotaBanner />
 
         <div className="border-t border-border pt-4 space-y-2">
           <div className="flex items-center justify-between gap-3">
@@ -355,6 +358,28 @@ export default function ProfilePage() {
           </div>
         </Unauthenticated>
       </motion.div>
+    </div>
+  );
+}
+
+function StorageQuotaBanner() {
+  const status = useQuery(api.storageQuota.getStorageStatus, {});
+  if (!status || !status.isWarning) return null;
+
+  const usedMB = (status.usedBytes / (1024 * 1024)).toFixed(0);
+  const maxMB = (status.maxBytes / (1024 * 1024)).toFixed(0);
+
+  return (
+    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 space-y-1">
+      <p className="text-xs font-bold text-yellow-400 flex items-center gap-2">
+        <HardDrive className="size-3.5" /> Penyimpanan bukti hampir penuh ({status.percentUsed}%)
+      </p>
+      <p className="text-xs text-yellow-400/80">
+        Sudah terpakai {usedMB} MB dari {maxMB} MB (kuota ini dipakai <b>bersama seluruh pengguna aplikasi</b>,
+        bukan cuma milik kamu). Silakan backup/unduh bukti penting kamu sekarang, atau hapus manual
+        yang sudah tidak perlu — kalau tidak, bukti PALING LAMA (dari siapa pun) akan otomatis
+        terhapus saat penyimpanan benar-benar penuh.
+      </p>
     </div>
   );
 }

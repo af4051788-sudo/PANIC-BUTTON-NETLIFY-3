@@ -14,4 +14,18 @@ crons.interval(
   {},
 );
 
+/**
+ * Auto-hapus bukti (foto/audio/video) berdasarkan KUOTA PENYIMPANAN — lihat
+ * convex/storageQuota.ts. Riwayat alarm (teks) sengaja TIDAK di-auto-delete;
+ * itu murni keputusan manual oleh user sendiri (lihat convex/alarms.ts:
+ * deleteAlarm), karena riwayat ringan dan pemilik yang paling tahu kapan
+ * datanya sudah tidak relevan lagi.
+ */
+crons.interval(
+  "enforce evidence storage quota",
+  { hours: 6 },
+  internal.storageQuota.enforceQuotaCron,
+  {},
+);
+
 export default crons;

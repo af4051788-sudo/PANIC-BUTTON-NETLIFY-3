@@ -75,7 +75,14 @@ export function useEvidenceCapture() {
     async (alarmId: Id<"alarms">, shots: number, intervalSec: number) => {
       let stream: MediaStream | null = null;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        // Batasi resolusi LANGSUNG DI SUMBER (bukan ambil full-res lalu
+        // downscale) — kamera HP modern bisa 12MP+ (~4000x3000px), padahal
+        // untuk kebutuhan bukti, 1280px sisi terpanjang sudah lebih dari
+        // cukup untuk mengenali wajah/plat nomor/lokasi. Ini penghematan
+        // ukuran file paling besar dibanding parameter lain.
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
         const video = document.createElement("video");
         video.srcObject = stream;
         await video.play();
@@ -83,11 +90,17 @@ export function useEvidenceCapture() {
 
         const canvas = document.createElement("canvas");
         for (let shot = 0; shot < shots; shot++) {
-          canvas.width = video.videoWidth || 640;
-          canvas.height = video.videoHeight || 480;
+          // Pengaman kedua: kalau device tetap kasih resolusi lebih besar
+          // dari yang diminta (constraint browser cuma "ideal", bukan wajib),
+          // clamp manual di sisi terpanjang max 1280px sebelum di-encode.
+          const srcW = video.videoWidth || 1280;
+          const srcH = video.videoHeight || 720;
+          const scale = Math.min(1, 1280 / Math.max(srcW, srcH));
+          canvas.width = Math.round(srcW * scale);
+          canvas.height = Math.round(srcH * scale);
           canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
           const blob: Blob | null = await new Promise((resolve) =>
-            canvas.toBlob((b) => resolve(b), "image/jpeg", 0.85),
+            canvas.toBlob((b) => resolve(b), "image/jpeg", 0.75),
           );
           if (blob) void uploadBlob(alarmId, "photo", blob);
           if (shot < shots - 1) await new Promise((r) => setTimeout(r, intervalSec * 1000));
@@ -114,7 +127,16 @@ export function useEvidenceCapture() {
       let stream: MediaStream | null = null;
       try {
         stream = await navigator.mediaDevices.getUserMedia(
-          kind === "video" ? { video: { facingMode: "environment" }, audio: true } : { audio: true },
+          kind === "video"
+            ? {
+                // 640x480 lebih dari cukup untuk klip bukti singkat — video
+                // adalah kontributor ukuran file TERBESAR, jadi resolusi
+                // rendah + bitrate rendah di bawah adalah penghematan paling
+                // signifikan (bisa 60-80% lebih kecil dari default browser).
+                video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
+                audio: true,
+              }
+            : { audio: true },
         );
         const chunks: BlobPart[] = [];
         const preferredTypes =
@@ -129,7 +151,14 @@ export function useEvidenceCapture() {
           );
           return;
         }
-        const recorder = new MediaRecorder(stream, { mimeType });
+        const recorder = new MediaRecorder(stream, {
+          mimeType,
+          // Bitrate rendah tapi masih layak dibaca sebagai bukti (bukan
+          // untuk kualitas sinematik) — audio speech tetap jelas di 64kbps,
+          // video 480p tetap bisa mengenali wajah/kejadian di 500kbps.
+          videoBitsPerSecond: kind === "video" ? 500_000 : undefined,
+          audioBitsPerSecond: 64_000,
+        });
         recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
 
         const done = new Promise<Blob>((resolve) => {
