@@ -311,9 +311,9 @@ function AdminDashboardInner() {
         )}
       </AnimatePresence>
 
-      <div className="flex gap-1 bg-card rounded-xl p-1 border border-border">
+      <div className="flex gap-1 bg-card rounded-xl p-1 border border-border overflow-x-auto">
         {[{ id: "overview", label: "Ringkasan", icon: LayoutDashboard }, { id: "alarms", label: "Log Alarm", icon: List }, { id: "devices", label: "Perangkat", icon: Cpu }, { id: "admins", label: "Kelola Admin", icon: ShieldCheck }].map(({ id, label, icon: Icon }) => (
-          <button key={id} onClick={() => setTab(id as "overview" | "alarms" | "devices" | "admins")} className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors cursor-pointer ${tab === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+          <button key={id} onClick={() => setTab(id as "overview" | "alarms" | "devices" | "admins")} className={`shrink-0 sm:flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${tab === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
             <Icon className="size-3.5" />{label}
           </button>
         ))}
@@ -426,7 +426,9 @@ function AdminManagementTab() {
   const [search, setSearch] = useState("");
   const results = useQuery(api.admin.searchUsers, { search });
   const promoteToAdmin = useMutation(api.admin.promoteToAdmin);
+  const demoteAdmin = useMutation(api.admin.demoteAdmin);
   const [promotingId, setPromotingId] = useState<Id<"users"> | null>(null);
+  const [demotingId, setDemotingId] = useState<Id<"users"> | null>(null);
 
   const handlePromote = async (targetUserId: Id<"users">, name: string | undefined) => {
     try {
@@ -436,6 +438,17 @@ function AdminManagementTab() {
       toast.error(err instanceof Error ? err.message : "Gagal mempromosikan.");
     } finally {
       setPromotingId(null);
+    }
+  };
+
+  const handleDemote = async (targetUserId: Id<"users">, name: string | undefined) => {
+    try {
+      await demoteAdmin({ targetUserId });
+      toast.success(`Status admin platform "${name ?? "User"}" dicabut.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal mencabut admin.");
+    } finally {
+      setDemotingId(null);
     }
   };
 
@@ -465,7 +478,20 @@ function AdminManagementTab() {
                 <p className="text-xs text-muted-foreground truncate">{u.email ?? "-"}</p>
               </div>
               {u.role === "admin" ? (
-                <span className="text-xs font-bold text-green-400 bg-green-500/10 px-2.5 py-1.5 rounded-full shrink-0">Sudah Admin</span>
+                demotingId === u._id ? (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button size="sm" variant="destructive" onClick={() => handleDemote(u._id, u.name)}>Ya, Cabut</Button>
+                    <Button size="sm" variant="secondary" onClick={() => setDemotingId(null)}>Batal</Button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setDemotingId(u._id)}
+                    className="text-xs font-bold text-green-400 bg-green-500/10 hover:bg-red-500/10 hover:text-red-400 px-2.5 py-1.5 rounded-full shrink-0 cursor-pointer transition-colors"
+                    title="Klik untuk cabut status admin platform"
+                  >
+                    Sudah Admin — Cabut?
+                  </button>
+                )
               ) : promotingId === u._id ? (
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Button size="sm" onClick={() => handlePromote(u._id, u.name)}>Ya, Jadikan</Button>

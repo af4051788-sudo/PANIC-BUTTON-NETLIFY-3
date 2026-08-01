@@ -313,7 +313,7 @@ function ProfileForm() {
         >
           <div className="flex items-center gap-3">
             <Smartphone className="size-4 text-muted-foreground" />
-            <span className="text-sm text-foreground">Perangkat Wemos D1</span>
+            <span className="text-sm text-foreground">Perangkat</span>
           </div>
           <ChevronRight className="size-4 text-muted-foreground" />
         </button>

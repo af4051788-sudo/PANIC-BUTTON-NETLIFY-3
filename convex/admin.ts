@@ -243,6 +243,37 @@ export const promoteToAdmin = mutation({
 });
 
 /**
+ * Cabut status admin platform dari seseorang. Siapa pun yang SUDAH admin
+ * platform berhak mencabut admin lain (termasuk mencabut dirinya sendiri) —
+ * otoritasnya setara antar sesama admin platform, tidak ada "super-admin"
+ * tunggal yang lebih berkuasa dari admin lainnya.
+ *
+ * Pengaman WAJIB: tidak boleh mencabut admin TERAKHIR yang tersisa — kalau
+ * dibolehkan, aplikasi akan terkunci total (tidak ada satu pun yang bisa
+ * masuk /admin lagi, bahkan untuk mempromosikan admin baru), karena
+ * setFirstAdmin cuma jalan kalau BENAR-BENAR belum ada admin sama sekali.
+ */
+export const demoteAdmin = mutation({
+  args: { targetUserId: v.id("users") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
+    await requireAdmin(ctx, userId);
+
+    const allUsers = await ctx.db.query("users").collect();
+    const adminCount = allUsers.filter((u) => u.role === "admin").length;
+    if (adminCount <= 1) {
+      throw new ConvexError({
+        message: "Tidak bisa mencabut — ini admin platform TERAKHIR. Jadikan orang lain admin dulu sebelum mencabut yang ini.",
+        code: "LAST_ADMIN",
+      });
+    }
+
+    await ctx.db.patch(args.targetUserId, { role: "user" });
+  },
+});
+
+/**
  * Setup pertama kali: jadikan diri sendiri admin.
  * Hanya bisa dijalankan jika BELUM ADA admin sama sekali di database.
  */

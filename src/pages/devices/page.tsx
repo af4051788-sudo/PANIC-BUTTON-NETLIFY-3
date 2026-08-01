@@ -516,7 +516,7 @@ function CommunityDeviceManager() {
       </div>
 
       <Button variant="outline" size="sm" className="w-full" onClick={() => navigate("/devices/smartplug-setup")}>
-        Punya Smart Plug (Sirine/Lampu)? Hubungkan di sini
+        Pengaturan Perangkat Tuya
       </Button>
 
       {adminGroups.length > 1 && (
