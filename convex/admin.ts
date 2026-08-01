@@ -21,6 +21,31 @@ async function checkAdmin(ctx: QueryCtx, userId: Id<"users">) {
   return user;
 }
 
+/**
+ * Cari user berdasarkan nama/email — dipakai halaman "Kelola Admin" untuk
+ * cari calon admin baru. Cuma admin yang boleh pakai (biar tidak jadi celah
+ * enumerasi data user oleh sembarang orang). Minimal 2 karakter supaya tidak
+ * sengaja return semua user sekaligus saat search box masih kosong.
+ */
+export const searchUsers = query({
+  args: { search: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+    const isAdmin = await checkAdmin(ctx, userId);
+    if (!isAdmin) return [];
+
+    const term = args.search.trim().toLowerCase();
+    if (term.length < 2) return [];
+
+    const allUsers = await ctx.db.query("users").collect();
+    return allUsers
+      .filter((u) => u.name?.toLowerCase().includes(term) || u.email?.toLowerCase().includes(term))
+      .slice(0, 20)
+      .map((u) => ({ _id: u._id, name: u.name, email: u.email, role: u.role ?? "user" }));
+  },
+});
+
 export const getAllActiveAlarms = query({
   args: {},
   handler: async (ctx) => {

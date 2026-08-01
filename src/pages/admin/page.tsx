@@ -277,7 +277,7 @@ function AdminSetupGate({ children }: { children: React.ReactNode }) {
 }
 
 function AdminDashboardInner() {
-  const [tab, setTab] = useState<"overview" | "alarms" | "devices">("overview");  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [tab, setTab] = useState<"overview" | "alarms" | "devices" | "admins">("overview");  const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterType, setFilterType] = useState<string>("all");
   const [respondingAlarm, setRespondingAlarm] = useState<AlarmRow | null>(null);
   const [showBroadcast, setShowBroadcast] = useState(false);
@@ -312,8 +312,8 @@ function AdminDashboardInner() {
       </AnimatePresence>
 
       <div className="flex gap-1 bg-card rounded-xl p-1 border border-border">
-        {[{ id: "overview", label: "Ringkasan", icon: LayoutDashboard }, { id: "alarms", label: "Log Alarm", icon: List }, { id: "devices", label: "Perangkat", icon: Cpu }].map(({ id, label, icon: Icon }) => (
-          <button key={id} onClick={() => setTab(id as "overview" | "alarms" | "devices")} className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors cursor-pointer ${tab === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+        {[{ id: "overview", label: "Ringkasan", icon: LayoutDashboard }, { id: "alarms", label: "Log Alarm", icon: List }, { id: "devices", label: "Perangkat", icon: Cpu }, { id: "admins", label: "Kelola Admin", icon: ShieldCheck }].map(({ id, label, icon: Icon }) => (
+          <button key={id} onClick={() => setTab(id as "overview" | "alarms" | "devices" | "admins")} className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors cursor-pointer ${tab === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
             <Icon className="size-3.5" />{label}
           </button>
         ))}
@@ -414,8 +414,70 @@ function AdminDashboardInner() {
         </div>
       )}
 
+      {tab === "admins" && <AdminManagementTab />}
+
       {respondingAlarm && <RespondModal alarm={respondingAlarm} onClose={() => setRespondingAlarm(null)} />}
       {showBroadcast && <BroadcastModal onClose={() => setShowBroadcast(false)} />}
+    </div>
+  );
+}
+
+function AdminManagementTab() {
+  const [search, setSearch] = useState("");
+  const results = useQuery(api.admin.searchUsers, { search });
+  const promoteToAdmin = useMutation(api.admin.promoteToAdmin);
+  const [promotingId, setPromotingId] = useState<Id<"users"> | null>(null);
+
+  const handlePromote = async (targetUserId: Id<"users">, name: string | undefined) => {
+    try {
+      await promoteToAdmin({ targetUserId });
+      toast.success(`"${name ?? "User"}" sekarang admin platform.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal mempromosikan.");
+    } finally {
+      setPromotingId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-primary/10 border border-primary/20 rounded-xl p-3">
+        <p className="text-xs text-muted-foreground">
+          Cari user berdasarkan nama atau email, lalu jadikan admin platform. Admin platform bisa melihat &
+          mengelola SEMUA komunitas sekaligus — beda dari admin komunitas/RT yang cakupannya cuma 1 grup.
+        </p>
+      </div>
+
+      <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nama atau email (min. 2 huruf)..." />
+
+      {search.trim().length < 2 ? (
+        <p className="text-xs text-muted-foreground text-center py-6">Ketik minimal 2 huruf untuk mulai mencari.</p>
+      ) : results === undefined ? (
+        <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}</div>
+      ) : results.length === 0 ? (
+        <p className="text-xs text-muted-foreground text-center py-6">Tidak ada user yang cocok.</p>
+      ) : (
+        <div className="space-y-2">
+          {results.map((u) => (
+            <div key={u._id} className="bg-card border border-border rounded-xl p-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-medium text-sm text-foreground truncate">{u.name ?? "(Tanpa nama)"}</p>
+                <p className="text-xs text-muted-foreground truncate">{u.email ?? "-"}</p>
+              </div>
+              {u.role === "admin" ? (
+                <span className="text-xs font-bold text-green-400 bg-green-500/10 px-2.5 py-1.5 rounded-full shrink-0">Sudah Admin</span>
+              ) : promotingId === u._id ? (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button size="sm" onClick={() => handlePromote(u._id, u.name)}>Ya, Jadikan</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setPromotingId(null)}>Batal</Button>
+                </div>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => setPromotingId(u._id)} className="shrink-0">Jadikan Admin</Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
