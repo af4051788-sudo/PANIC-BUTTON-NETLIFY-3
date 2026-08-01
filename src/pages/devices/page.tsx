@@ -472,6 +472,7 @@ function CommunityDeviceTargetEditor({ deviceId }: { deviceId: Id<"devices"> }) 
 }
 
 function CommunityDeviceManager() {
+  const navigate = useNavigate();
   const groups = useQuery(api.groups.getMyGroups, {});
   const adminGroups = (groups ?? []).filter((g) => g.role === "admin");
   const [selectedGroupId, setSelectedGroupId] = useState<Id<"groups"> | null>(null);
@@ -513,6 +514,10 @@ function CommunityDeviceManager() {
           Wemos untuk lokasi bersama — Pos Satpam, Kantor RT/RW, Fasum. Tombol fisiknya memicu alarm atas nama lokasi, bukan atas nama orang.
         </p>
       </div>
+
+      <Button variant="outline" size="sm" className="w-full" onClick={() => navigate("/devices/smartplug-setup")}>
+        Punya Smart Plug (Sirine/Lampu)? Hubungkan di sini
+      </Button>
 
       {adminGroups.length > 1 && (
         <select

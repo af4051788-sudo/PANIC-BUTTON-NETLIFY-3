@@ -433,6 +433,9 @@ export default function AdminPage() {
           <h1 className="font-bold text-foreground flex items-center gap-2"><ShieldAlert className="size-4 text-primary" /> Admin Dashboard</h1>
           <p className="text-xs text-muted-foreground">Monitoring {"&"} Kontrol Real-time</p>
         </div>
+        <button onClick={() => navigate("/admin/smartplug-queue")} className="text-xs text-primary underline cursor-pointer shrink-0">
+          Antrian Smart Plug
+        </button>
       </div>
       <motion.div className="max-w-2xl mx-auto px-4 py-6" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
         <Authenticated>

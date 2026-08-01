@@ -99,6 +99,53 @@ http.route({
   }),
 });
 
+// Alarm status LONG-POLL — versi hybrid untuk mengurangi jumlah request dari
+// Wemos secara drastis. Endpoint LAMA (/wemos/alarm/status) di atas TETAP ADA
+// dan tidak berubah sama sekali, supaya firmware lama tetap jalan tanpa
+// perlu upgrade. Ini endpoint TAMBAHAN, opsional dipakai firmware baru.
+//
+// Cara kerja: request DITAHAN (tidak langsung dijawab) sampai salah satu dari
+// dua hal terjadi — (a) ada alarm yang menargetkan device ini, dijawab SAAT
+// ITU JUGA (nyaris instan), atau (b) 25 detik berlalu tanpa alarm, dijawab
+// "aman" dan device diharapkan langsung buka koneksi baru lagi. Idle-wait di
+// server ini TIDAK memakan CPU (cuma nunggu), jadi tidak menambah beban biaya
+// berarti dibanding polling singkat — yang berkurang drastis adalah JUMLAH
+// requestnya, bukan cost per requestnya.
+http.route({
+  path: "/wemos/alarm/status/longpoll",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const deviceId = url.searchParams.get("deviceId") ?? "";
+    const pairingCode = url.searchParams.get("pairingCode") ?? "";
+
+    const CHECK_INTERVAL_MS = 2000; // seberapa sering cek ulang status di database selama menahan
+    const MAX_WAIT_MS = 25000; // total maksimal request ini ditahan sebelum dipaksa dijawab
+    const deadline = Date.now() + MAX_WAIT_MS;
+
+    let result = await ctx.runQuery(internal.iot.getAlarmStatus, { deviceId, pairingCode });
+
+    // deviceId/pairingCode salah — jangan ditahan sama sekali, langsung balas
+    // supaya device tahu ada masalah pairing dan bisa tampilkan errornya.
+    if (!result.ok) {
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    while (!result.alarmActive && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, CHECK_INTERVAL_MS));
+      result = await ctx.runQuery(internal.iot.getAlarmStatus, { deviceId, pairingCode });
+    }
+
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }),
+});
+
 // ── Community device (Pos Satpam/Kantor RT/RW/Fasum) — tombol fisik memicu
 // alarm atas nama LOKASI, bukan atas nama satu orang. Endpoint status
 // polling TETAP sama (/wemos/alarm/status) — device apa pun cukup pakai satu

@@ -26,6 +26,7 @@ const char* WIFI_PASSWORD = "PASSWORD_WIFI_ANDA";
 const char* DEVICE_ID     = "${deviceId}";
 const char* PAIRING_CODE  = "${pairingCode}";
 const char* SERVER_URL    = "https://YOUR-CONVEX-SITE.convex.site";
+const char* SERVER_HOST   = "YOUR-CONVEX-SITE.convex.site"; // sama seperti SERVER_URL tapi TANPA "https://" — dipakai long-poll
 
 const int PIN_BUTTON  = D3;
 const int PIN_BUZZER  = D5;
@@ -37,7 +38,14 @@ const unsigned long LONG_PRESS_MS     = 3000;
 const unsigned long ESCALATION_MS     = 15000;
 const unsigned long TRIPLE_TAP_WINDOW = 600;
 const unsigned long HEARTBEAT_INTERVAL= 300000;
-const unsigned long POLL_INTERVAL     = 2000;
+// Long-poll: request DITAHAN server sampai maksimal ~25 detik menunggu alarm,
+// jauh lebih hemat dibanding polling pendek tiap 2 detik seperti sebelumnya —
+// tapi TETAP nyaris instan begitu ada alarm beneran (server jawab saat itu
+// juga, tidak nunggu 25 detik penuh). LONGPOLL_LOCAL_CHECK_MS = seberapa
+// sering kita cek balik tombol fisik SAAT sedang menunggu jawaban server,
+// supaya panic button tetap responsif walau koneksi sedang "menggantung".
+const unsigned long LONGPOLL_MAX_MS        = 28000; // sedikit lebih lama dari batas server (25s) sbg jaga-jaga
+const unsigned long LONGPOLL_LOCAL_CHECK_MS= 20;
 
 enum AlarmState { STATE_IDLE, STATE_COUNTDOWN, STATE_ALARM_ACTIVE, STATE_SILENT_ACTIVE, STATE_ESCALATED };
 AlarmState currentState = STATE_IDLE;
@@ -46,7 +54,6 @@ bool     buttonPressed   = false;
 bool     prevButtonState = HIGH;
 unsigned long pressStartMs = 0;
 unsigned long lastHeartbeatMs = 0;
-unsigned long lastPollMs = 0;
 int      tapCount = 0;
 unsigned long lastTapMs = 0;
 bool     escalated = false;
@@ -109,19 +116,10 @@ void sendEscalation() {
   httpPost("/wemos/alarm/escalate", body, response);
 }
 
-void pollAlarmStatus() {
-  // Endpoint status SAMA untuk device personal maupun komunal — device ini
-  // akan berbunyi setiap kali dirinya termasuk dalam target list alarm
-  // manapun yang sedang aktif (diatur di halaman "Kelola Target Alarm").
-  String path = "/wemos/alarm/status?deviceId="; path += DEVICE_ID; path += "&pairingCode="; path += PAIRING_CODE;
-  String response; if (!httpGet(path.c_str(), response)) return;
-  StaticJsonDocument<256> doc;
-  if (deserializeJson(doc, response)) return;
-  bool serverAlarmActive = doc["alarmActive"] | false;
+void applyAlarmStatusResult(bool serverAlarmActive, const char* remoteType) {
   if (serverAlarmActive && currentState == STATE_IDLE) {
     // Alarm dari device/anggota LAIN menargetkan device ini — bunyikan buzzer
     // walau tombol fisik device ini sendiri tidak ditekan.
-    const char* remoteType = doc["alarmType"] | "panic";
     currentState = (strcmp(remoteType, "silent") == 0) ? STATE_SILENT_ACTIVE : STATE_ALARM_ACTIVE;
     setLed(currentState == STATE_ALARM_ACTIVE, false, currentState == STATE_SILENT_ACTIVE);
     if (currentState == STATE_ALARM_ACTIVE) digitalWrite(PIN_BUZZER, HIGH);
@@ -130,6 +128,56 @@ void pollAlarmStatus() {
     currentState = STATE_IDLE; escalated = false; setLed(false, true, false);
     digitalWrite(PIN_BUZZER, LOW);
   }
+}
+
+// Long-poll: buka koneksi manual (bukan pakai HTTPClient yang blocking total)
+// supaya SELAMA menunggu jawaban server, kita tetap bisa cek tombol fisik
+// tiap ~20ms lewat handleButton(). Kalau tombol ditekan sampai jadi alarm
+// LOKAL saat sedang menunggu, koneksi long-poll ini langsung dibatalkan —
+// alarm dari tombol sendiri selalu prioritas #1, tidak pernah nunggu network.
+void longPollAlarmStatus() {
+  if (WiFi.status() != WL_CONNECTED) { delay(200); return; }
+
+  BearSSL::WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(LONGPOLL_MAX_MS + 3000);
+
+  if (!client.connect(SERVER_HOST, 443)) { delay(500); return; }
+
+  String path = "/wemos/alarm/status/longpoll?deviceId="; path += DEVICE_ID; path += "&pairingCode="; path += PAIRING_CODE;
+  client.print(String("GET ") + path + " HTTP/1.1\r\n" +
+               "Host: " + SERVER_HOST + "\r\n" +
+               "Connection: close\r\n\r\n");
+
+  unsigned long waitStart = millis();
+  while (client.connected() && !client.available()) {
+    // Kunci dari desain ini: tombol fisik TETAP dicek tiap ~20ms walau
+    // sedang menunggu server, jadi panic button tidak pernah "nge-lag"
+    // walau request-nya ditahan sampai puluhan detik di sisi server.
+    handleButton();
+    if (currentState == STATE_ALARM_ACTIVE || currentState == STATE_ESCALATED || currentState == STATE_SILENT_ACTIVE) {
+      client.stop();
+      return; // alarm lokal sendiri sudah dikirim di dalam handleButton() → sendAlarmOn()
+    }
+    if (millis() - waitStart > LONGPOLL_MAX_MS) { client.stop(); return; }
+    delay(LONGPOLL_LOCAL_CHECK_MS);
+  }
+  if (!client.connected() && !client.available()) { client.stop(); return; } // koneksi putus sebelum ada jawaban
+
+  // Lewati HTTP header, ambil body JSON-nya saja.
+  String line;
+  while (client.connected() || client.available()) {
+    line = client.readStringUntil('\\n');
+    if (line == "\\r" || line.length() == 0) break; // baris kosong = pemisah header/body
+  }
+  String body = client.readString();
+  client.stop();
+
+  StaticJsonDocument<256> doc;
+  if (deserializeJson(doc, body)) return;
+  bool serverAlarmActive = doc["alarmActive"] | false;
+  const char* remoteType = doc["alarmType"] | "panic";
+  applyAlarmStatusResult(serverAlarmActive, remoteType);
 }
 
 void handleButton() {
@@ -185,7 +233,11 @@ void loop() {
   unsigned long now = millis();
   handleButton();
   if (currentState == STATE_IDLE) setLed(false, true, false);
-  if (now - lastPollMs >= POLL_INTERVAL) { pollAlarmStatus(); lastPollMs = now; }
+  // Tidak lagi berbasis interval tetap (dulu tiap 2 detik) — longPollAlarmStatus()
+  // otomatis "menunggu" di dalam dirinya sendiri (nyaris instan kalau ada alarm,
+  // maksimal ~28 detik kalau tidak ada), lalu loop() langsung panggil lagi.
+  // Tombol fisik TETAP responsif selama menunggu (lihat komentar di dalam fungsi).
+  longPollAlarmStatus();
   if (now - lastHeartbeatMs >= HEARTBEAT_INTERVAL) { sendHeartbeat(); lastHeartbeatMs = now; }
   delay(10);
 }
@@ -260,7 +312,7 @@ GND           →  Katoda semua LED`.trim();
           <AlertTriangle className="size-5 text-yellow-400 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="font-bold text-sm text-yellow-400">Sebelum Upload Firmware</p>
-            <p className="text-xs text-muted-foreground">Ganti <code className="text-yellow-400 bg-yellow-500/10 px-1 rounded">DEVICE_ID</code> dan <code className="text-yellow-400 bg-yellow-500/10 px-1 rounded">PAIRING_CODE</code> dengan nilai dari halaman <button onClick={() => navigate("/devices")} className="text-primary underline cursor-pointer">Perangkat</button>. Juga ubah WiFi dan SERVER_URL.</p>
+            <p className="text-xs text-muted-foreground">Ganti <code className="text-yellow-400 bg-yellow-500/10 px-1 rounded">DEVICE_ID</code> dan <code className="text-yellow-400 bg-yellow-500/10 px-1 rounded">PAIRING_CODE</code> dengan nilai dari halaman <button onClick={() => navigate("/devices")} className="text-primary underline cursor-pointer">Perangkat</button>. Juga ubah WiFi, <code className="text-yellow-400 bg-yellow-500/10 px-1 rounded">SERVER_URL</code>, dan <code className="text-yellow-400 bg-yellow-500/10 px-1 rounded">SERVER_HOST</code> (isinya sama, cuma yang kedua tanpa "https://").</p>
           </div>
         </div>
 
@@ -303,7 +355,7 @@ GND           →  Katoda semua LED`.trim();
 
         <Section title="Bagaimana Device Ini Bisa Bunyi untuk Alarm Orang/Lokasi Lain?" icon={AlertTriangle}>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Setiap device — personal maupun komunal — polling status yang SAMA (<code className="text-primary">/wemos/alarm/status</code>).
+            Setiap device — personal maupun komunal — long-poll status yang SAMA (<code className="text-primary">/wemos/alarm/status/longpoll</code>).
             Device akan berbunyi kalau dirinya termasuk dalam <b>daftar target</b> alarm yang sedang aktif, siapa pun/apa pun pemicunya.
           </p>
           <p className="text-xs text-muted-foreground leading-relaxed">
@@ -314,6 +366,20 @@ GND           →  Katoda semua LED`.trim();
             <li><b>Default Mode Kawal:</b> tidak ada device yang bunyi (app-only) — supaya jalan pulang malam tidak bikin geger satu RT.</li>
             <li><b>Default tombol fisik komunal:</b> semua device di grup yang sama ikut bunyi (siaran ke seluruh lokasi).</li>
           </ul>
+        </Section>
+
+        <Section title="Kenapa Long-Poll, Bukan Polling Biasa?" icon={Wifi}>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Firmware ini pakai <b>hybrid long-polling</b>: request ke server DITAHAN (tidak langsung dijawab) sampai
+            maksimal ~25 detik, kecuali ada alarm — kalau ada, server jawab <b>saat itu juga</b> (nyaris instan).
+            Dibanding polling pendek tiap 2 detik, ini memangkas jumlah request device secara drastis
+            (~8× lebih sedikit) tanpa mengorbankan kecepatan deteksi alarm.
+          </p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Satu hal penting yang sudah ditangani di firmware ini: <b>tombol fisik tetap dicek tiap ~20 milidetik</b>
+            walau koneksi long-poll sedang "menggantung" menunggu jawaban server — jadi menekan tombol PANIC tidak
+            pernah terasa delay, walau request sedang ditahan puluhan detik di background.
+          </p>
         </Section>
 
         <Section title="Skema Rangkaian (Wiring)" icon={Zap} defaultOpen>

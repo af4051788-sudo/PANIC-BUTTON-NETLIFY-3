@@ -24,6 +24,7 @@ import type * as push from "../push.js";
 import type * as pushSender from "../pushSender.js";
 import type * as rateLimiting from "../rateLimiting.js";
 import type * as scheduler from "../scheduler.js";
+import type * as smartplug from "../smartplug.js";
 import type * as storageQuota from "../storageQuota.js";
 import type * as users from "../users.js";
 
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   pushSender: typeof pushSender;
   rateLimiting: typeof rateLimiting;
   scheduler: typeof scheduler;
+  smartplug: typeof smartplug;
   storageQuota: typeof storageQuota;
   users: typeof users;
 }>;

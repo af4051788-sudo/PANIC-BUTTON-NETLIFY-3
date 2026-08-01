@@ -12,6 +12,8 @@ import AdminPage from "./pages/admin/page.tsx";
 import CommunityPage from "./pages/community/page.tsx";
 import AnalyticsPage from "./pages/analytics/page.tsx";
 import FirmwarePage from "./pages/firmware/page.tsx";
+import SmartPlugSetupPage from "./pages/devices/smartplug-setup.tsx";
+import SmartPlugQueuePage from "./pages/admin/smartplug-queue.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 function AuthenticatedApp() {
@@ -22,7 +24,9 @@ function AuthenticatedApp() {
           <Route path="/" element={<Index />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/devices" element={<DevicesPage />} />
+          <Route path="/devices/smartplug-setup" element={<SmartPlugSetupPage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/admin/smartplug-queue" element={<SmartPlugQueuePage />} />
           <Route path="/community" element={<CommunityPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/firmware" element={<FirmwarePage />} />

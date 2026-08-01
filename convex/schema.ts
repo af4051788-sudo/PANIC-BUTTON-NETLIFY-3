@@ -51,10 +51,38 @@ export default defineSchema({
     deviceType: v.optional(v.union(v.literal("personal"), v.literal("community"))),
     locationLabel: v.optional(v.string()), // "Pos Satpam Blok A", dst — hanya untuk community
     groupId: v.optional(v.id("groups")), // wajib diisi untuk device community
+    // "wemos" (default, backward compatible) = device fisik custom, komunikasi
+    // via HTTP polling. "tuya_smartplug" = colokan pintar pabrikan, OUTPUT-ONLY
+    // (tidak ada tombol trigger), dikontrol lewat Tuya Cloud API — tidak polling
+    // sama sekali, hanya dipanggil saat ada alarm nyata.
+    outputMethod: v.optional(v.union(v.literal("wemos"), v.literal("tuya_smartplug"))),
+    tuyaDeviceId: v.optional(v.string()), // ID device di sisi Tuya Cloud, wajib diisi untuk outputMethod "tuya_smartplug"
   })
     .index("by_user", ["userId"])
     .index("by_device_id", ["deviceId"])
     .index("by_group", ["groupId"]),
+
+  // Antrian permintaan menghubungkan akun Smart Life komunitas ke Tuya Cloud
+  // Project kita. Alurnya 2 arah: pengurus RT ajukan (pending) → admin platform
+  // generate QR dari dashboard Tuya lalu upload gambarnya (qr_ready) → pengurus
+  // RT scan QR pakai app Smart Life mereka sendiri lalu konfirmasi (linked).
+  smartPlugLinkRequests: defineTable({
+    groupId: v.id("groups"),
+    requestedBy: v.id("users"),
+    locationLabel: v.string(), // "Pos Ronda Blok A", dst — buat admin gampang identifikasi
+    quantity: v.number(), // perkiraan jumlah smart plug yang mau dihubungkan
+    status: v.union(
+      v.literal("pending"), // baru diajukan, menunggu admin proses
+      v.literal("qr_ready"), // admin sudah generate & upload QR, menunggu discan
+      v.literal("linked"), // pengurus RT sudah scan & konfirmasi berhasil
+      v.literal("rejected"), // admin menolak (mis. data tidak lengkap)
+    ),
+    qrImageStorageId: v.optional(v.id("_storage")),
+    tuyaUid: v.optional(v.string()), // UID akun Smart Life di Tuya, terisi setelah status "linked"
+    note: v.optional(v.string()), // catatan admin, mis. alasan reject
+  })
+    .index("by_group", ["groupId"])
+    .index("by_status", ["status"]),
 
   alarms: defineTable({
     userId: v.id("users"),
