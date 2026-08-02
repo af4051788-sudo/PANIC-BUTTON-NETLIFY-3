@@ -142,3 +142,17 @@
     cursor: pointer;
   }
 }
+
+/* Animasi glow judul saat alarm aktif/masuk — sengaja pakai CSS native
+   (@keyframes) bukan Framer Motion, supaya browser yang menangani lewat
+   compositor, bukan JS re-render tiap frame. Lebih ringan di HP low-spec. */
+@keyframes title-glow-alarm {
+  0%, 100% { text-shadow: 0 0 8px #ef444480; }
+  50% { text-shadow: 0 0 24px #ef4444cc; }
+}
+@keyframes title-glow-incoming {
+  0%, 100% { text-shadow: 0 0 8px #f59e0b80; }
+  50% { text-shadow: 0 0 24px #f59e0bcc; }
+}
+.title-glow-alarm { animation: title-glow-alarm 1.2s ease-in-out infinite; }
+.title-glow-incoming { animation: title-glow-incoming 1.2s ease-in-out infinite; }

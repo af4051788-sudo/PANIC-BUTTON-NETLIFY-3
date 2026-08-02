@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, memo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useMutation, useQuery } from "convex/react";
 import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
@@ -92,26 +92,27 @@ interface PanicBtnProps {
   incomingNames: string[];
   alarmType: "panic" | "silent" | null;
   countdown: number | null;
-  pressProgress: number;
+  isPressing: boolean;
+  progressCircleRef: React.RefObject<SVGCircleElement | null>;
   onPointerDown: () => void;
   onPointerUp: () => void;
   onClick: () => void;
 }
 
-function PanicBtn({
+const PanicBtn = memo(function PanicBtn({
   isAlarmActive,
   hasIncoming,
   incomingNames,
   alarmType,
   countdown,
-  pressProgress,
+  isPressing,
+  progressCircleRef,
   onPointerDown,
   onPointerUp,
   onClick,
 }: PanicBtnProps) {
   const radius = 126;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference * (1 - pressProgress);
 
   // Dua status aktif bersamaan (alarm sendiri aktif + ada alarm masuk) →
   // warna tombol bergantian setiap ~1.8 detik sebagai tanda "mode ganda".
@@ -180,13 +181,13 @@ function PanicBtn({
         style={{ left: -24, top: -24 }}
       >
         <circle cx={(280 + 48) / 2} cy={(280 + 48) / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="5" />
-        {pressProgress > 0 && (
+        {isPressing && (
           <circle
+            ref={progressCircleRef}
             cx={(280 + 48) / 2} cy={(280 + 48) / 2} r={radius}
             fill="none" stroke={colorScheme.ring} strokeWidth="5"
-            strokeDasharray={circumference} strokeDashoffset={strokeDashoffset}
+            strokeDasharray={circumference} strokeDashoffset={circumference}
             strokeLinecap="round"
-            style={{ transition: "stroke-dashoffset 0.05s linear" }}
           />
         )}
       </svg>
@@ -315,7 +316,7 @@ function PanicBtn({
       </motion.div>
     </div>
   );
-}
+});
 
 // ── Incoming alarm banner (below button) ─────────────────────────────────────
 // Reusable "X orang merespon" pill that expands into a name list. Used both
@@ -472,7 +473,7 @@ function AlarmLocationButton({ alarmId }: { alarmId: string }) {
   );
 }
 
-function IncomingAlarmBanner({
+const IncomingAlarmBanner = memo(function IncomingAlarmBanner({
   alarms,
   onRespond,
 }: {
@@ -537,12 +538,12 @@ function IncomingAlarmBanner({
       )}
     </AnimatePresence>
   );
-}
+});
 
 // ── Main core component ───────────────────────────────────────────────────────
 function PanicButtonCore() {
   const { incomingAlarms, respondToAlarmId } = useIncomingAlarms();
-  const [pressProgress, setPressProgress] = useState(0);
+  const [isPressing, setIsPressing] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isAlarmActive, setIsAlarmActive] = useState(false);
   const [alarmType, setAlarmType] = useState<"panic" | "silent" | null>(null);
@@ -553,6 +554,7 @@ function PanicButtonCore() {
   const countdownTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const pressStart = useRef<number>(0);
   const rafRef = useRef<number | null>(null);
+  const progressCircleRef = useRef<SVGCircleElement | null>(null);
 
   const triggerAlarm = useMutation(api.alarms.triggerAlarm);
   const resolveAlarm = useMutation(api.alarms.resolveAlarm);
@@ -643,6 +645,7 @@ function PanicButtonCore() {
     const holdSec = currentUser?.panicHoldDurationSec ?? 3;
     pressStart.current = Date.now();
     setCountdown(holdSec);
+    setIsPressing(true);
     let cd = holdSec;
     countdownTimer.current = setInterval(() => {
       cd -= 1;
@@ -654,10 +657,19 @@ function PanicButtonCore() {
         activatePanicAlarm("panic");
       }
     }, 1000);
+    // PENTING untuk performa: loop ini jalan ~60x/detik selama tombol
+    // ditahan. Sengaja TIDAK pakai setState di sini — kalau pakai, tiap
+    // frame akan re-render SELURUH halaman (header, banner, dll), bukan
+    // cuma ring progress-nya. Ini dulu penyebab utama animasi terasa berat/
+    // patah-patah, apalagi di HP low-spec. Solusinya: mutate DOM lewat ref
+    // secara langsung, di luar mekanisme render React sama sekali.
+    const circumference = 2 * Math.PI * 126;
     const animate = () => {
       const elapsed = Date.now() - pressStart.current;
       const progress = Math.min(elapsed / (holdSec * 1000), 1);
-      setPressProgress(progress);
+      if (progressCircleRef.current) {
+        progressCircleRef.current.style.strokeDashoffset = String(circumference * (1 - progress));
+      }
       if (progress < 1) rafRef.current = requestAnimationFrame(animate);
     };
     rafRef.current = requestAnimationFrame(animate);
@@ -666,7 +678,7 @@ function PanicButtonCore() {
   const cancelPress = useCallback(() => {
     if (countdownTimer.current) clearInterval(countdownTimer.current);
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    setPressProgress(0);
+    setIsPressing(false);
     setCountdown(null);
   }, []);
 
@@ -702,16 +714,8 @@ function PanicButtonCore() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
       >
-        <motion.div
-          className="flex items-center justify-center gap-2 mb-1"
-          animate={{
-            textShadow: isAlarmActive
-              ? ["0 0 8px #ef444480", "0 0 24px #ef4444cc", "0 0 8px #ef444480"]
-              : hasIncoming
-              ? ["0 0 8px #f59e0b80", "0 0 24px #f59e0bcc", "0 0 8px #f59e0b80"]
-              : "none",
-          }}
-          transition={{ duration: 1.2, repeat: (isAlarmActive || hasIncoming) ? Infinity : 0 }}
+        <div
+          className={`flex items-center justify-center gap-2 mb-1 ${isAlarmActive ? "title-glow-alarm" : hasIncoming ? "title-glow-incoming" : ""}`}
         >
           <ShieldAlert
             className="size-7"
@@ -726,7 +730,7 @@ function PanicButtonCore() {
           >
             {hasIncoming ? "ADA YANG BUTUH BANTUAN" : displayTitle}
           </h1>
-        </motion.div>
+        </div>
         <p className="text-muted-foreground text-xs">Sistem Keamanan Komunitas</p>
       </motion.div>
 
@@ -754,7 +758,8 @@ function PanicButtonCore() {
           incomingNames={incomingNames}
           alarmType={alarmType}
           countdown={countdown}
-          pressProgress={pressProgress}
+          isPressing={isPressing}
+          progressCircleRef={progressCircleRef}
           onPointerDown={startPress}
           onPointerUp={cancelPress}
           onClick={handleButtonClick}
