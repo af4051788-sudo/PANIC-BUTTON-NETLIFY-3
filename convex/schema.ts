@@ -57,6 +57,12 @@ export default defineSchema({
     // sama sekali, hanya dipanggil saat ada alarm nyata.
     outputMethod: v.optional(v.union(v.literal("wemos"), v.literal("tuya_smartplug"))),
     tuyaDeviceId: v.optional(v.string()), // ID device di sisi Tuya Cloud, wajib diisi untuk outputMethod "tuya_smartplug"
+    // Kode DP (data point) untuk perintah ON/OFF — beda jenis device Tuya
+    // beda kodenya: smart plug umumnya "switch_1", smart bulb umumnya
+    // "switch_led". Opsional, default "switch_1" kalau tidak diisi (lihat
+    // convex/tuya.ts). Cek kode PERSIS punya device kamu lewat Tuya API
+    // Explorer → "Query Things Data Model" sebelum registrasi kalau ragu.
+    tuyaDpCode: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
     .index("by_device_id", ["deviceId"])

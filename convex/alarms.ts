@@ -60,6 +60,15 @@ export const triggerAlarm = mutation({
       targetDeviceIds,
     });
 
+    // Nyalakan smart plug Tuya yang termasuk target (best-effort, tidak
+    // pernah memblokir/menggagalkan alarm walau kontrol Tuya gagal/timeout).
+    if (targetDeviceIds.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.tuya.controlSmartPlugsForAlarm, {
+        targetDeviceIds,
+        turnOn: true,
+      });
+    }
+
     // Fan out a push notification to group members (best-effort, never blocks
     // the alarm from being recorded even if push fails or isn't configured).
     const recipients = await resolveAlarmRecipients(ctx, userId);
@@ -112,6 +121,13 @@ export const resolveAlarm = mutation({
       status: "resolved",
       resolvedAt: new Date().toISOString(),
     });
+
+    if (alarm.targetDeviceIds && alarm.targetDeviceIds.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.tuya.controlSmartPlugsForAlarm, {
+        targetDeviceIds: alarm.targetDeviceIds,
+        turnOn: false,
+      });
+    }
   },
 });
 
@@ -227,5 +243,12 @@ export const markFalseAlarm = mutation({
       status: "false_alarm",
       resolvedAt: new Date().toISOString(),
     });
+
+    if (alarm.targetDeviceIds && alarm.targetDeviceIds.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.tuya.controlSmartPlugsForAlarm, {
+        targetDeviceIds: alarm.targetDeviceIds,
+        turnOn: false,
+      });
+    }
   },
 });

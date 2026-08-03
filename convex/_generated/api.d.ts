@@ -26,6 +26,7 @@ import type * as rateLimiting from "../rateLimiting.js";
 import type * as scheduler from "../scheduler.js";
 import type * as smartplug from "../smartplug.js";
 import type * as storageQuota from "../storageQuota.js";
+import type * as tuya from "../tuya.js";
 import type * as users from "../users.js";
 
 import type {
@@ -53,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   scheduler: typeof scheduler;
   smartplug: typeof smartplug;
   storageQuota: typeof storageQuota;
+  tuya: typeof tuya;
   users: typeof users;
 }>;
 

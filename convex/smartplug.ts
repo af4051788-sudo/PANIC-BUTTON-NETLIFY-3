@@ -141,11 +141,17 @@ export const registerSmartPlugDevice = mutation({
     name: v.string(),
     tuyaDeviceId: v.string(),
     locationLabel: v.optional(v.string()),
+    deviceKind: v.optional(v.union(v.literal("plug"), v.literal("bulb"), v.literal("other"))),
+    tuyaDpCode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
     await requireGroupAdmin(ctx, args.groupId, userId);
+
+    // Default kode DP berdasarkan jenis device kalau user tidak isi manual —
+    // smart plug/relay umumnya "switch_1", smart bulb umumnya "switch_led".
+    const defaultDpCode = args.deviceKind === "bulb" ? "switch_led" : "switch_1";
 
     return await ctx.db.insert("devices", {
       userId,
@@ -158,6 +164,7 @@ export const registerSmartPlugDevice = mutation({
       groupId: args.groupId,
       outputMethod: "tuya_smartplug",
       tuyaDeviceId: args.tuyaDeviceId,
+      tuyaDpCode: args.tuyaDpCode?.trim() || defaultDpCode,
     });
   },
 });

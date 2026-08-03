@@ -33,6 +33,7 @@ function SmartPlugSetupCore() {
   const [quantity, setQuantity] = useState("1");
   const [newDeviceName, setNewDeviceName] = useState("");
   const [newDeviceTuyaId, setNewDeviceTuyaId] = useState("");
+  const [newDeviceKind, setNewDeviceKind] = useState<"plug" | "bulb">("plug");
 
   if (groups === undefined) return <Skeleton className="h-40 w-full rounded-2xl" />;
   if (adminGroups.length === 0) {
@@ -84,6 +85,7 @@ function SmartPlugSetupCore() {
         groupId: effectiveGroupId,
         name: newDeviceName.trim(),
         tuyaDeviceId: newDeviceTuyaId.trim(),
+        deviceKind: newDeviceKind,
       });
       toast.success(`"${newDeviceName}" berhasil didaftarkan.`);
       setNewDeviceName("");
@@ -170,10 +172,29 @@ function SmartPlugSetupCore() {
       {/* Setelah linked: daftarkan tiap smart plug dengan nama sendiri */}
       {latestLinked && (
         <div className="bg-card border border-primary/20 rounded-2xl p-5 space-y-3">
-          <p className="font-bold text-sm text-foreground">Daftarkan smart plug "{latestLinked.locationLabel}"</p>
-          <p className="text-xs text-muted-foreground">Beri nama tiap smart plug supaya mudah dikenali (mis. "Sirine Pos Ronda").</p>
-          <Input value={newDeviceName} onChange={(e) => setNewDeviceName(e.target.value)} placeholder="Nama smart plug" />
+          <p className="font-bold text-sm text-foreground">Daftarkan perangkat Tuya "{latestLinked.locationLabel}"</p>
+          <p className="text-xs text-muted-foreground">Beri nama tiap perangkat supaya mudah dikenali (mis. "Sirine Pos Ronda").</p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setNewDeviceKind("plug")}
+              className={`flex-1 py-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${newDeviceKind === "plug" ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground"}`}
+            >
+              🔌 Smart Plug
+            </button>
+            <button
+              type="button"
+              onClick={() => setNewDeviceKind("bulb")}
+              className={`flex-1 py-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${newDeviceKind === "bulb" ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground"}`}
+            >
+              💡 Smart Bulb
+            </button>
+          </div>
+          <Input value={newDeviceName} onChange={(e) => setNewDeviceName(e.target.value)} placeholder="Nama perangkat" />
           <Input value={newDeviceTuyaId} onChange={(e) => setNewDeviceTuyaId(e.target.value)} placeholder="ID Device Tuya (dari app Smart Life)" />
+          <p className="text-[10px] text-muted-foreground">
+            Kode ON/OFF otomatis dipilihkan ({newDeviceKind === "bulb" ? "switch_led" : "switch_1"}) — kalau perangkat kamu ternyata beda kode, bisa disesuaikan lewat Convex Dashboard di field <code className="bg-muted px-1 rounded">tuyaDpCode</code>.
+          </p>
           <Button onClick={handleRegisterDevice} variant="secondary" className="w-full gap-1">
             <Plus className="size-4" /> Tambah
           </Button>

@@ -1,6 +1,21 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+
+/**
+ * Filter dari daftar device ID mana saja yang smart plug Tuya (outputMethod
+ * "tuya_smartplug") DAN sudah punya tuyaDeviceId terisi. Dipanggil dari
+ * convex/tuya.ts (action "use node" tidak bisa akses ctx.db langsung).
+ */
+export const getTuyaDevicesFromIds = internalQuery({
+  args: { deviceIds: v.array(v.id("devices")) },
+  handler: async (ctx, args) => {
+    const devices = await Promise.all(args.deviceIds.map((id) => ctx.db.get(id)));
+    return devices
+      .filter((d): d is NonNullable<typeof d> => d !== null && d.outputMethod === "tuya_smartplug" && !!d.tuyaDeviceId)
+      .map((d) => ({ tuyaDeviceId: d.tuyaDeviceId as string, tuyaDpCode: d.tuyaDpCode ?? "switch_1" }));
+  },
+});
 
 function generateDeviceId(): string {
   return "WD1-" + Math.random().toString(36).substring(2, 10).toUpperCase();

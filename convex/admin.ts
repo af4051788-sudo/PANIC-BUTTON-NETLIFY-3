@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel.js";
 import type { QueryCtx, MutationCtx } from "./_generated/server.js";
 
@@ -205,11 +206,20 @@ export const sendResponderNote = mutation({
     if (!userId) throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
     await requireAdmin(ctx, userId);
 
+    const alarm = await ctx.db.get(args.alarmId);
+
     await ctx.db.patch(args.alarmId, {
       responderNote: args.note,
       status: "resolved",
       resolvedAt: new Date().toISOString(),
     });
+
+    if (alarm?.targetDeviceIds && alarm.targetDeviceIds.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.tuya.controlSmartPlugsForAlarm, {
+        targetDeviceIds: alarm.targetDeviceIds,
+        turnOn: false,
+      });
+    }
   },
 });
 
@@ -220,10 +230,19 @@ export const forceResolveAlarm = mutation({
     if (!userId) throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
     await requireAdmin(ctx, userId);
 
+    const alarm = await ctx.db.get(args.alarmId);
+
     await ctx.db.patch(args.alarmId, {
       status: "resolved",
       resolvedAt: new Date().toISOString(),
     });
+
+    if (alarm?.targetDeviceIds && alarm.targetDeviceIds.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.tuya.controlSmartPlugsForAlarm, {
+        targetDeviceIds: alarm.targetDeviceIds,
+        turnOn: false,
+      });
+    }
   },
 });
 
