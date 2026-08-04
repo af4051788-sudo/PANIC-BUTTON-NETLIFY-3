@@ -2,6 +2,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import { internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { resolveAlarmRecipients } from "./push";
 
 /**
  * Scheduled job: auto-eskalasi alarm escort yang sudah > 6 menit tanpa resolusi.
@@ -17,8 +18,26 @@ export const autoEscalateEscort = internalMutation({
 
     await ctx.db.patch(args.alarmId, { isEscalated: true });
 
-    // Escort tidak dikonfirmasi aman dalam 6 menit → treat sebagai darurat,
-    // kabari kontak darurat juga.
+    const owner = await ctx.db.get(alarm.userId);
+
+    // Kabari PEMANTAU ESCORT di dalam app (bukan cuma kontak darurat
+    // eksternal) — ini yang sebelumnya HILANG: eskalasi tidak pernah benar-
+    // benar terlihat oleh siapa pun di dalam aplikasi, cuma set flag internal
+    // + coba SMS 1 kontak (yang diam-diam tidak berbuat apa-apa kalau nomor
+    // kontak darurat belum diisi di profil).
+    const recipients = await resolveAlarmRecipients(ctx, alarm.userId, alarm.alarmRecipients);
+    if (recipients.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.pushSender.sendAlarmPush, {
+        userIds: recipients,
+        title: "🚨 Escort Mode: Tidak Ada Konfirmasi!",
+        body: `${owner?.name ?? "Anggota"} tidak konfirmasi aman tepat waktu. Segera cek kondisinya!`,
+        alarmId: args.alarmId,
+        urgent: true,
+      });
+    }
+
+    // Escort tidak dikonfirmasi aman tepat waktu → treat sebagai darurat,
+    // kabari juga kontak darurat eksternal (SMS/WA) kalau sudah diisi di profil.
     await ctx.scheduler.runAfter(0, internal.notifyContact.sendEmergencyContactAlert, {
       alarmId: args.alarmId,
     });

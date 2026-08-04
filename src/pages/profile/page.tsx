@@ -72,7 +72,6 @@ function ProfileForm() {
   const [evidenceTypes, setEvidenceTypes] = useState<Array<"photo" | "audio" | "video">>([]);
   const [evidenceDuration, setEvidenceDuration] = useState(20);
   const [panicHoldDuration, setPanicHoldDuration] = useState(3);
-  const [escortDuration, setEscortDuration] = useState(6);
   const [panicRateLimiterEnabled, setPanicRateLimiterEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -87,7 +86,6 @@ function ProfileForm() {
     setEvidenceTypes(user.evidenceCaptureTypes ?? []);
     setEvidenceDuration(user.evidenceCaptureDurationSec ?? 20);
     setPanicHoldDuration(user.panicHoldDurationSec ?? 3);
-    setEscortDuration(user.escortDurationMinutes ?? 6);
     setPanicRateLimiterEnabled(user.panicRateLimiterEnabled ?? true);
     setInitialized(true);
   }
@@ -115,7 +113,6 @@ function ProfileForm() {
         evidenceCaptureTypes: evidenceTypes,
         evidenceCaptureDurationSec: evidenceDuration,
         panicHoldDurationSec: panicHoldDuration,
-        escortDurationMinutes: escortDuration,
         panicRateLimiterEnabled,
       });
       toast.success("Profil berhasil disimpan.");
@@ -288,29 +285,6 @@ function ProfileForm() {
               className="flex-1 accent-primary"
             />
             <span className="text-xs font-bold text-foreground w-10 text-right">{panicHoldDuration}s</span>
-          </div>
-        </div>
-
-        <div className="border-t border-border pt-4 space-y-2">
-          <Label className="flex items-center gap-2 text-muted-foreground">
-            <Navigation className="size-4" /> Durasi Check-in Escort Mode
-          </Label>
-          <p className="text-xs text-muted-foreground">
-            Selama Escort Mode aktif, kamu harus konfirmasi "Aman" tiap durasi ini — kalau tidak, alarm darurat otomatis aktif.
-          </p>
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={1}
-              max={180}
-              step={1}
-              value={escortDuration}
-              onChange={(e) => setEscortDuration(Number(e.target.value))}
-              className="flex-1 accent-primary"
-            />
-            <span className="text-xs font-bold text-foreground w-14 text-right">
-              {escortDuration < 60 ? `${escortDuration}m` : `${(escortDuration / 60).toFixed(escortDuration % 60 === 0 ? 0 : 1)}j`}
-            </span>
           </div>
         </div>
 

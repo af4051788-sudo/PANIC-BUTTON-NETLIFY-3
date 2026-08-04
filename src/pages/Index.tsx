@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton.tsx";
 import { toast } from "sonner";
 import { useIncomingAlarms } from "@/hooks/use-alarm-context.tsx";
 import { useEvidenceCapture } from "@/hooks/use-evidence-capture.ts";
+import { EscortQuickButton } from "@/components/escort-quick-button.tsx";
 import {
   ShieldAlert, Bell, BellOff, MapPin, Wifi,
   ShieldCheck, Users, AlertTriangle, ExternalLink,
@@ -477,7 +478,7 @@ const IncomingAlarmBanner = memo(function IncomingAlarmBanner({
   alarms,
   onRespond,
 }: {
-  alarms: Array<{ alarmId: string; userName: string; groupName: string; type: string; respondedByMe: boolean; responderCount: number; isLocationTriggered: boolean }>;
+  alarms: Array<{ alarmId: string; userName: string; groupName: string; type: string; sensorKind?: string; respondedByMe: boolean; responderCount: number; isLocationTriggered: boolean }>;
   onRespond: (alarmId: string) => void;
 }) {
   return (
@@ -502,7 +503,9 @@ const IncomingAlarmBanner = memo(function IncomingAlarmBanner({
                   <p className="font-bold text-sm text-amber-300 truncate">
                     {a.isLocationTriggered && "📍 "}{a.userName}
                   </p>
-                  <p className="text-xs text-amber-400/80">{a.type === "panic" ? "Alarm Panic" : a.type === "silent" ? "Silent Alert" : "Escort"} · {a.groupName}</p>
+                  <p className="text-xs text-amber-400/80">
+                    {a.type === "panic" ? "Alarm Panic" : a.type === "silent" ? "Silent Alert" : a.type === "sensor" ? (a.sensorKind === "fire" ? "🔥 Sensor Api" : a.sensorKind === "flood" ? "💧 Sensor Air" : "🚪 Sensor Pintu") : "Escort"} · {a.groupName}
+                  </p>
                 </div>
                 {a.respondedByMe && (
                   <span className="text-[10px] font-bold text-green-400 bg-green-500/10 border border-green-500/30 rounded-full px-2 py-1 whitespace-nowrap">
@@ -765,6 +768,12 @@ function PanicButtonCore() {
           onClick={handleButtonClick}
         />
       </motion.div>
+
+      {!isAlarmActive && (
+        <div className="flex justify-center mt-3">
+          <EscortQuickButton />
+        </div>
+      )}
 
       {/* Incoming alarm banners */}
       <IncomingAlarmBanner alarms={incomingAlarms} onRespond={handleRespondToAlarm} />

@@ -266,6 +266,7 @@ export const startEscortMode = mutation({
   args: {
     groupId: v.optional(v.id("groups")),
     alarmRecipients: v.optional(v.array(v.id("users"))),
+    durationMinutes: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -274,7 +275,11 @@ export const startEscortMode = mutation({
 
     const targetDeviceIds = await resolveTargetDeviceIds(ctx, { type: "user", id: userId }, "escort");
     const user = await ctx.db.get(userId);
-    const durationMs = (user?.escortDurationMinutes ?? 6) * 60 * 1000;
+    // Durasi eksplisit dari modal (dipilih user saat itu juga) diprioritaskan
+    // di atas default lama di profil — supaya pengaturannya tidak terpisah
+    // dan gampang diakses langsung dari modal escort.
+    const durationMinutes = args.durationMinutes ?? user?.escortDurationMinutes ?? 6;
+    const durationMs = durationMinutes * 60 * 1000;
     const nextCheckinAt = new Date(Date.now() + durationMs).toISOString();
 
     const id = await ctx.db.insert("alarms", {

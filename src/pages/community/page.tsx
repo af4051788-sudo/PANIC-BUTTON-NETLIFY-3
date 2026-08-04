@@ -340,6 +340,7 @@ function EscortMode({
   onStop: () => void;
 }) {
   const [escortRecipients, setEscortRecipients] = useState<Id<"users">[] | null>(null);
+  const [duration, setDuration] = useState(6);
   const [showAdminWarning, setShowAdminWarning] = useState(false);
   const [pendingNoAdmin, setPendingNoAdmin] = useState<Id<"users">[] | null>(null);
   const [starting, setStarting] = useState(false);
@@ -348,7 +349,7 @@ function EscortMode({
   const handleStart = async () => {
     setStarting(true);
     try {
-      await startEscort({ groupId, alarmRecipients: escortRecipients ?? undefined });
+      await startEscort({ groupId, alarmRecipients: escortRecipients ?? undefined, durationMinutes: duration });
       toast.success('Escort Mode dimulai! Kelola lewat widget kecil di bawah layar.');
       onStop(); // tutup form setup — tampilan "aktif" sekarang ditangani EscortWidget global
     } catch (err) {
@@ -375,6 +376,26 @@ function EscortMode({
         <h3 className="font-bold text-foreground">Pengaturan Escort Mode</h3>
       </div>
       <p className="text-sm text-muted-foreground">Pilih anggota yang akan memantau Anda selama pengawalan.</p>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-bold text-muted-foreground">Durasi Check-in</label>
+          <span className="text-xs font-bold text-foreground">
+            {duration < 60 ? `${duration} menit` : `${(duration / 60).toFixed(duration % 60 === 0 ? 0 : 1)} jam`}
+          </span>
+        </div>
+        <input
+          type="range"
+          min={1}
+          max={180}
+          step={1}
+          value={duration}
+          onChange={(e) => setDuration(Number(e.target.value))}
+          className="w-full accent-yellow-500"
+        />
+        <p className="text-[10px] text-muted-foreground">Kalau tidak konfirmasi "Aman" dalam durasi ini, alarm darurat otomatis aktif.</p>
+      </div>
+
       <RecipientSelector
         members={members}
         value={escortRecipients}
