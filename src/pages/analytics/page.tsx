@@ -33,6 +33,7 @@ import {
   BellOff,
   Trash2,
   ChevronDown,
+  FileDown,
 } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel.d.ts";
 
@@ -221,6 +222,7 @@ function groupAlarmsByMonthAndDay(alarms: AlarmItem[]) {
 
 function AlarmCard({
   alarm,
+  reporterName,
   isConfirming,
   onRequestDelete,
   onConfirmDelete,
@@ -229,6 +231,7 @@ function AlarmCard({
   onReport,
 }: {
   alarm: AlarmItem;
+  reporterName: string;
   isConfirming: boolean;
   onRequestDelete: () => void;
   onConfirmDelete: () => void;
@@ -238,13 +241,28 @@ function AlarmCard({
 }) {
   const cat = CATEGORIES.find((c) => c.value === alarm.incidentCategory);
   const CatIcon = cat?.icon;
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    setGeneratingPdf(true);
+    try {
+      const { generateIncidentPdf } = await import("@/lib/generate-incident-pdf.ts");
+      generateIncidentPdf({ ...alarm, reporterName });
+    } catch {
+      toast.error("Gagal membuat PDF. Coba lagi.");
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
   return (
     <div className="bg-card border border-border rounded-xl p-3 space-y-2">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2">
           {alarm.type === "panic" ? <Bell className="size-4 text-primary" /> : <BellOff className="size-4 text-yellow-400" />}
           <div>
-            <p className="font-medium text-sm text-foreground">{alarm.type === "panic" ? "Alarm Panic" : alarm.type === "silent" ? "Silent Alert" : "Escort Mode"}</p>
+            <p className="font-medium text-sm text-foreground">
+              {alarm.type === "panic" ? "Alarm Panic" : alarm.type === "silent" ? "Silent Alert" : alarm.type === "sensor" ? (alarm.sensorKind === "fire" ? "🔥 Sensor Api" : alarm.sensorKind === "flood" ? "💧 Sensor Air" : "🚪 Sensor Pintu") : "Escort Mode"}
+            </p>
             <p className="text-xs text-muted-foreground">{format(new Date(alarm.startedAt), "HH:mm", { locale: idLocale })}</p>
           </div>
         </div>
@@ -275,6 +293,15 @@ function AlarmCard({
       {alarm.status === "resolved" && !alarm.incidentCategory && (
         <button onClick={onReport} className="text-xs text-yellow-400 underline cursor-pointer">+ Isi laporan insiden</button>
       )}
+      {alarm.incidentCategory && (
+        <button
+          onClick={handleDownloadPdf}
+          disabled={generatingPdf}
+          className="text-xs text-primary underline cursor-pointer flex items-center gap-1 disabled:opacity-50"
+        >
+          <FileDown className="size-3" /> {generatingPdf ? "Membuat PDF..." : "Unduh Laporan PDF"}
+        </button>
+      )}
       {alarm.status === "active" && (
         <button onClick={onFalseAlarm} className="text-xs text-muted-foreground underline cursor-pointer hover:text-destructive transition-colors">
           Tandai alarm palsu
@@ -287,6 +314,7 @@ function AlarmCard({
 
 function AlarmHistory() {
   const alarms = useQuery(api.alarms.getRecentAlarms, { limit: 30 });
+  const currentUser = useQuery(api.users.getCurrentUser, {});
   const [reportingAlarmId, setReportingAlarmId] = useState<Id<"alarms"> | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<Id<"alarms"> | null>(null);
   const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>({});
@@ -373,6 +401,7 @@ function AlarmHistory() {
                               <AlarmCard
                                 key={alarm._id}
                                 alarm={alarm}
+                                reporterName={currentUser?.name ?? "Pengguna"}
                                 isConfirming={confirmDeleteId === alarm._id}
                                 onRequestDelete={() => setConfirmDeleteId(alarm._id)}
                                 onConfirmDelete={() => handleDeleteAlarm(alarm._id)}
