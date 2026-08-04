@@ -30,6 +30,9 @@ export default defineSchema({
     // paham risikonya (misal sering latihan/testing) bisa mematikannya
     // sendiri agar tidak pernah diblokir sistem saat kondisi darurat asli.
     panicRateLimiterEnabled: v.optional(v.boolean()),
+    // Durasi Escort Mode sebelum harus konfirmasi "Aman" lagi — 1-180 menit,
+    // default 6 kalau belum diset (sesuai perilaku sebelumnya).
+    escortDurationMinutes: v.optional(v.number()),
   })
     // Index ini WAJIB ada — @convex-dev/auth pakai ini untuk lookup user
     // saat sign-in/sign-up. Hilang = login/register akan gagal diam-diam.
@@ -63,6 +66,21 @@ export default defineSchema({
     // convex/tuya.ts). Cek kode PERSIS punya device kamu lewat Tuya API
     // Explorer → "Query Things Data Model" sebelum registrasi kalau ragu.
     tuyaDpCode: v.optional(v.string()),
+    // Fase 8: sensor tambahan di pin input Wemos D1 (pintu/api/air) — 1
+    // firmware bisa dukung ketiganya sekaligus, tapi tiap device pilih mana
+    // yang benar-benar dipasang & diaktifkan lewat array ini.
+    sensorsEnabled: v.optional(v.array(v.union(v.literal("door"), v.literal("fire"), v.literal("flood")))),
+    // Status terakhir tiap sensor yang diketahui server — dipakai untuk
+    // deteksi PERUBAHAN (edge trigger), bukan cuma level, supaya tidak
+    // membuat alarm baru berulang-ulang selama sensor tetap dalam kondisi
+    // trigger (misal pintu dibiarkan terbuka lama).
+    lastSensorState: v.optional(
+      v.object({
+        door: v.optional(v.boolean()),
+        fire: v.optional(v.boolean()),
+        flood: v.optional(v.boolean()),
+      }),
+    ),
   })
     .index("by_user", ["userId"])
     .index("by_device_id", ["deviceId"])
@@ -93,7 +111,11 @@ export default defineSchema({
   alarms: defineTable({
     userId: v.id("users"),
     deviceId: v.optional(v.string()),
-    type: v.union(v.literal("panic"), v.literal("silent"), v.literal("escort")),
+    type: v.union(v.literal("panic"), v.literal("silent"), v.literal("escort"), v.literal("sensor")),
+    // Diisi kalau type === "sensor" — sensor mana yang trigger. "fire" full
+    // siren di semua target (seperti panic), "door"/"flood" cuma notifikasi
+    // (seperti silent) karena risiko false-trigger lebih tinggi.
+    sensorKind: v.optional(v.union(v.literal("door"), v.literal("fire"), v.literal("flood"))),
     status: v.union(
       v.literal("active"),
       v.literal("resolved"),
@@ -115,6 +137,10 @@ export default defineSchema({
     targetDeviceIds: v.optional(v.array(v.id("devices"))), // device mana saja yg harus bunyi
     isLocationTriggered: v.optional(v.boolean()), // true kalau dipicu tombol fisik device community
     triggerLocationLabel: v.optional(v.string()), // "Pos Satpam Blok A" — ditampilkan ganti nama user
+    // Fase 9: Escort Mode yang benar-benar server-driven (bukan timer di
+    // browser) — supaya tetap jalan walau user pindah halaman/tutup app.
+    nextCheckinAt: v.optional(v.string()), // kapan konfirmasi "Aman" berikutnya jatuh tempo
+    escalationJobId: v.optional(v.id("_scheduled_functions")), // job eskalasi yang sedang terjadwal, dibatalkan & dijadwal ulang tiap konfirmasi "Aman"
   })
     .index("by_user", ["userId"])
     .index("by_status", ["status"]),

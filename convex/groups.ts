@@ -273,6 +273,9 @@ export const startEscortMode = mutation({
     await rateLimiter.limit(ctx, "createAlarm", { key: userId, throws: true });
 
     const targetDeviceIds = await resolveTargetDeviceIds(ctx, { type: "user", id: userId }, "escort");
+    const user = await ctx.db.get(userId);
+    const durationMs = (user?.escortDurationMinutes ?? 6) * 60 * 1000;
+    const nextCheckinAt = new Date(Date.now() + durationMs).toISOString();
 
     const id = await ctx.db.insert("alarms", {
       userId,
@@ -283,12 +286,16 @@ export const startEscortMode = mutation({
       groupId: args.groupId,
       alarmRecipients: args.alarmRecipients,
       targetDeviceIds,
+      nextCheckinAt,
     });
 
-    // Auto-eskalasi di server setelah 6 menit jika user tidak konfirmasi aman
-    await ctx.scheduler.runAfter(6 * 60 * 1000, internal.scheduler.autoEscalateEscort, {
+    // Auto-eskalasi di server sesuai durasi yang diatur user (default 6 menit)
+    // jika tidak konfirmasi "Aman" — ini TIDAK bergantung tab/halaman browser
+    // tetap terbuka sama sekali, jalan murni di server.
+    const jobId = await ctx.scheduler.runAfter(durationMs, internal.scheduler.autoEscalateEscort, {
       alarmId: id,
     });
+    await ctx.db.patch(id, { escalationJobId: jobId });
 
     const recipients = await resolveAlarmRecipients(ctx, userId, args.alarmRecipients);
     if (recipients.length > 0) {
@@ -302,6 +309,57 @@ export const startEscortMode = mutation({
       });
     }
     return id;
+  },
+});
+
+/**
+ * Konfirmasi "Aman" — INI PERBAIKAN dari bug sebelumnya yang salah memanggil
+ * resolveAlarm (yang malah mengakhiri alarm escort-nya, padahal usernya
+ * masih dalam perjalanan). Sekarang: alarm TETAP aktif, cuma jadwal eskalasi
+ * dibatalkan & dijadwalkan ULANG dari sekarang — persis seperti menekan
+ * "snooze" pada checkpoint keamanan, bukan mematikan pengawalannya.
+ */
+export const confirmEscortSafe = mutation({
+  args: { alarmId: v.id("alarms") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
+
+    const alarm = await ctx.db.get(args.alarmId);
+    if (!alarm || alarm.userId !== userId || alarm.type !== "escort" || alarm.status !== "active") return;
+
+    if (alarm.escalationJobId) {
+      await ctx.scheduler.cancel(alarm.escalationJobId);
+    }
+
+    const user = await ctx.db.get(userId);
+    const durationMs = (user?.escortDurationMinutes ?? 6) * 60 * 1000;
+    const nextCheckinAt = new Date(Date.now() + durationMs).toISOString();
+    const jobId = await ctx.scheduler.runAfter(durationMs, internal.scheduler.autoEscalateEscort, {
+      alarmId: args.alarmId,
+    });
+
+    await ctx.db.patch(args.alarmId, { nextCheckinAt, escalationJobId: jobId });
+  },
+});
+
+/**
+ * Hentikan Escort Mode secara manual (sudah sampai tujuan dengan selamat).
+ * Beda dari confirmEscortSafe: ini BENAR-BENAR mengakhiri alarm-nya.
+ */
+export const stopEscortMode = mutation({
+  args: { alarmId: v.id("alarms") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
+
+    const alarm = await ctx.db.get(args.alarmId);
+    if (!alarm || alarm.userId !== userId) return;
+
+    if (alarm.escalationJobId) {
+      await ctx.scheduler.cancel(alarm.escalationJobId);
+    }
+    await ctx.db.patch(args.alarmId, { status: "resolved", resolvedAt: new Date().toISOString() });
   },
 });
 
@@ -346,7 +404,7 @@ export const updateGroupButtonTitle = mutation({
  */
 export const getMyGroupActiveAlarms = query({
   args: {},
-  handler: async (ctx): Promise<Array<{ alarmId: string; userName: string; groupName: string; type: string; muteSound: boolean; respondedByMe: boolean; responderCount: number; isLocationTriggered: boolean }>> => {
+  handler: async (ctx): Promise<Array<{ alarmId: string; userName: string; groupName: string; type: string; sensorKind?: string; muteSound: boolean; respondedByMe: boolean; responderCount: number; isLocationTriggered: boolean }>> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return [];
 
@@ -355,7 +413,7 @@ export const getMyGroupActiveAlarms = query({
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
 
-    const results: Array<{ alarmId: string; userName: string; groupName: string; type: string; muteSound: boolean; respondedByMe: boolean; responderCount: number; isLocationTriggered: boolean }> = [];
+    const results: Array<{ alarmId: string; userName: string; groupName: string; type: string; sensorKind?: string; muteSound: boolean; respondedByMe: boolean; responderCount: number; isLocationTriggered: boolean }> = [];
     const seenAlarmIds = new Set<string>();
 
     for (const myMembership of memberships) {
@@ -411,6 +469,7 @@ export const getMyGroupActiveAlarms = query({
           userName: displayName,
           groupName: group.name,
           type: alarm.type,
+          sensorKind: alarm.sensorKind,
           muteSound: myMembership.muteAlarmSound ?? false,
           respondedByMe: !!myResponse,
           responderCount: allResponses.length,

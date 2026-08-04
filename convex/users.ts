@@ -37,6 +37,7 @@ export const updateProfile = mutation({
     ),
     evidenceCaptureDurationSec: v.optional(v.number()),
     panicHoldDurationSec: v.optional(v.number()),
+    escortDurationMinutes: v.optional(v.number()),
     panicRateLimiterEnabled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -56,6 +57,7 @@ export const updateProfile = mutation({
       evidenceCaptureTypes: args.evidenceCaptureTypes ?? user.evidenceCaptureTypes,
       evidenceCaptureDurationSec: args.evidenceCaptureDurationSec ?? user.evidenceCaptureDurationSec,
       panicHoldDurationSec: args.panicHoldDurationSec ?? user.panicHoldDurationSec,
+      escortDurationMinutes: args.escortDurationMinutes ?? user.escortDurationMinutes,
       panicRateLimiterEnabled: args.panicRateLimiterEnabled ?? user.panicRateLimiterEnabled,
     });
   },

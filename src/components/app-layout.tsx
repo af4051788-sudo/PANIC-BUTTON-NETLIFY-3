@@ -1,5 +1,6 @@
 import { Outlet } from "react-router-dom";
 import { AppNav } from "@/components/app-nav.tsx";
+import { EscortWidget } from "@/components/escort-widget.tsx";
 
 /**
  * Wraps every authenticated top-level page so AppNav is always present —
@@ -14,6 +15,7 @@ export function AppLayout() {
       <div className="pb-20 md:pb-0 md:pl-20">
         <Outlet />
       </div>
+      <EscortWidget />
       <AppNav />
     </>
   );

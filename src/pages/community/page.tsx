@@ -339,24 +339,23 @@ function EscortMode({
   groupAdminId?: Id<"users">;
   onStop: () => void;
 }) {
-  const [secondsLeft, setSecondsLeft] = useState(300);
-  const [isPaused, setIsPaused] = useState(false);
   const [escortRecipients, setEscortRecipients] = useState<Id<"users">[] | null>(null);
-  const [showSetup, setShowSetup] = useState(true);
   const [showAdminWarning, setShowAdminWarning] = useState(false);
   const [pendingNoAdmin, setPendingNoAdmin] = useState<Id<"users">[] | null>(null);
-  const resolveAlarm = useMutation(api.alarms.resolveAlarm);
+  const [starting, setStarting] = useState(false);
   const startEscort = useMutation(api.groups.startEscortMode);
-  const triggerPanic = useMutation(api.alarms.triggerAlarm);
-  const [alarmId, setAlarmId] = useState<Id<"alarms"> | null>(null);
 
   const handleStart = async () => {
-    const id = await startEscort({
-      groupId,
-      alarmRecipients: escortRecipients ?? undefined,
-    });
-    setAlarmId(id as Id<"alarms">);
-    setShowSetup(false);
+    setStarting(true);
+    try {
+      await startEscort({ groupId, alarmRecipients: escortRecipients ?? undefined });
+      toast.success('Escort Mode dimulai! Kelola lewat widget kecil di bawah layar.');
+      onStop(); // tutup form setup — tampilan "aktif" sekarang ditangani EscortWidget global
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal memulai Escort Mode.");
+    } finally {
+      setStarting(false);
+    }
   };
 
   const handleRecipientsChange = (val: Id<"users">[] | null) => {
@@ -369,99 +368,36 @@ function EscortMode({
     }
   };
 
-  useEffect(() => {
-    if (showSetup) return;
-    if (isPaused) return;
-    const interval = setInterval(() => {
-      setSecondsLeft((s) => {
-        if (s <= 1) {
-          triggerPanic({ type: "panic" });
-          toast.error("Escort Mode: Tidak ada respon! Alarm otomatis aktif.");
-          onStop();
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isPaused, triggerPanic, onStop, showSetup]);
-
-  const handleSafe = async () => {
-    if (alarmId) await resolveAlarm({ alarmId });
-    setSecondsLeft(300);
-    setIsPaused(false);
-    toast.success("Dikonfirmasi aman. Timer direset.");
-  };
-
-  const handleStop = async () => {
-    if (alarmId) await resolveAlarm({ alarmId });
-    onStop();
-  };
-
-  const minutes = Math.floor(secondsLeft / 60);
-  const seconds = secondsLeft % 60;
-  const progress = secondsLeft / 300;
-  const circumference = 2 * Math.PI * 45;
-
-  if (showSetup) {
-    return (
-      <motion.div className="bg-card border border-yellow-500/30 rounded-2xl p-5 space-y-4" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
-        <div className="flex items-center gap-2">
-          <Navigation className="size-5 text-yellow-400" />
-          <h3 className="font-bold text-foreground">Pengaturan Escort Mode</h3>
-        </div>
-        <p className="text-sm text-muted-foreground">Pilih anggota yang akan memantau Anda selama pengawalan.</p>
-        <RecipientSelector
-          members={members}
-          value={escortRecipients}
-          onChange={handleRecipientsChange}
-          adminId={groupAdminId}
-        />
-        {escortRecipients !== null && groupAdminId && !escortRecipients.includes(groupAdminId) && (
-          <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3">
-            <AlertTriangle className="size-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-yellow-400">Admin tidak termasuk. Jika darurat, respons mungkin terlambat.</p>
-          </div>
-        )}
-        <div className="flex gap-3">
-          <Button onClick={handleStart} className="flex-1 gap-2 bg-yellow-600 hover:bg-yellow-700 text-white">
-            <Navigation className="size-4" /> Mulai Escort
-          </Button>
-          <Button variant="ghost" onClick={onStop} className="border border-border">Batal</Button>
-        </div>
-        <AdminWarningDialog
-          open={showAdminWarning}
-          onConfirm={() => { setEscortRecipients(pendingNoAdmin); setShowAdminWarning(false); setPendingNoAdmin(null); }}
-          onCancel={() => { setShowAdminWarning(false); setPendingNoAdmin(null); }}
-        />
-      </motion.div>
-    );
-  }
-
   return (
-    <motion.div className="bg-card border border-yellow-500/30 rounded-2xl p-6 space-y-5" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+    <motion.div className="bg-card border border-yellow-500/30 rounded-2xl p-5 space-y-4" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
       <div className="flex items-center gap-2">
         <Navigation className="size-5 text-yellow-400" />
-        <h3 className="font-bold text-foreground">Escort Mode Aktif</h3>
-        <span className="text-xs bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded-full">LIVE</span>
+        <h3 className="font-bold text-foreground">Pengaturan Escort Mode</h3>
       </div>
-      <p className="text-sm text-muted-foreground">Konfirmasi "Aman" setiap 5 menit. Jika tidak merespon, alarm darurat akan otomatis aktif.</p>
-      <div className="flex flex-col items-center gap-4">
-        <div className="relative w-28 h-28">
-          <svg className="absolute inset-0 -rotate-90" width="112" height="112" viewBox="0 0 112 112">
-            <circle cx="56" cy="56" r="45" fill="none" stroke="oklch(1 0 0 / 8%)" strokeWidth="6" />
-            <circle cx="56" cy="56" r="45" fill="none" stroke={secondsLeft < 60 ? "oklch(0.62 0.26 25)" : "oklch(0.8 0.18 80)"} strokeWidth="6" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - progress)} strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s linear" }} />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className={`text-2xl font-black ${secondsLeft < 60 ? "text-primary" : "text-yellow-400"}`}>{minutes}:{seconds.toString().padStart(2, "0")}</span>
-            <span className="text-xs text-muted-foreground">tersisa</span>
-          </div>
+      <p className="text-sm text-muted-foreground">Pilih anggota yang akan memantau Anda selama pengawalan.</p>
+      <RecipientSelector
+        members={members}
+        value={escortRecipients}
+        onChange={handleRecipientsChange}
+        adminId={groupAdminId}
+      />
+      {escortRecipients !== null && groupAdminId && !escortRecipients.includes(groupAdminId) && (
+        <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3">
+          <AlertTriangle className="size-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-yellow-400">Admin tidak termasuk. Jika darurat, respons mungkin terlambat.</p>
         </div>
-        <div className="flex gap-3 w-full">
-          <Button onClick={handleSafe} className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white"><UserCheck className="size-4" />AMAN</Button>
-          <button onClick={handleStop} className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer text-sm">Stop</button>
-        </div>
+      )}
+      <div className="flex gap-3">
+        <Button onClick={handleStart} disabled={starting} className="flex-1 gap-2 bg-yellow-600 hover:bg-yellow-700 text-white">
+          <Navigation className="size-4" /> {starting ? "Memulai..." : "Mulai Escort"}
+        </Button>
+        <Button variant="ghost" onClick={onStop} className="border border-border">Batal</Button>
       </div>
+      <AdminWarningDialog
+        open={showAdminWarning}
+        onConfirm={() => { setEscortRecipients(pendingNoAdmin); setShowAdminWarning(false); setPendingNoAdmin(null); }}
+        onCancel={() => { setShowAdminWarning(false); setPendingNoAdmin(null); }}
+      />
     </motion.div>
   );
 }
@@ -519,7 +455,9 @@ function GroupDetail({ groupId, onBack }: { groupId: Id<"groups">; onBack: () =>
   const broadcasts = useQuery(api.groups.getGroupBroadcasts, { groupId });
   const leaveGroup = useMutation(api.groups.leaveGroup);
   const updateTitle = useMutation(api.groups.updateGroupButtonTitle);
-  const [escortActive, setEscortActive] = useState(false);
+  const [showEscortSetup, setShowEscortSetup] = useState(false);
+  const myActiveAlarm = useQuery(api.alarms.getMyActiveAlarm, {});
+  const hasActiveEscort = myActiveAlarm?.type === "escort" && myActiveAlarm.status === "active";
   const [editingTitle, setEditingTitle] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
@@ -650,12 +588,20 @@ function GroupDetail({ groupId, onBack }: { groupId: Id<"groups">; onBack: () =>
       )}
 
       {/* Escort Mode */}
-      {escortActive ? (
+      {hasActiveEscort ? (
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Navigation className="size-4 text-yellow-400" />
+            <h3 className="font-semibold text-sm text-foreground">Escort Mode Sedang Aktif</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">Kelola (konfirmasi "Aman" / hentikan) lewat widget kecil di bawah layar — tetap muncul di halaman manapun.</p>
+        </div>
+      ) : showEscortSetup ? (
         <EscortMode
           groupId={groupId}
           members={memberList}
           groupAdminId={adminMember?.userId}
-          onStop={() => setEscortActive(false)}
+          onStop={() => setShowEscortSetup(false)}
         />
       ) : (
         <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
@@ -664,7 +610,7 @@ function GroupDetail({ groupId, onBack }: { groupId: Id<"groups">; onBack: () =>
             <h3 className="font-semibold text-sm text-foreground">Escort Mode</h3>
           </div>
           <p className="text-xs text-muted-foreground">Aktifkan untuk monitoring ketika bepergian malam. Pilih siapa yang memantau Anda.</p>
-          <Button variant="secondary" size="sm" className="w-full gap-2 border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10" onClick={() => setEscortActive(true)}>
+          <Button variant="secondary" size="sm" className="w-full gap-2 border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10" onClick={() => setShowEscortSetup(true)}>
             <Navigation className="size-4" /> Aktifkan Escort Mode
           </Button>
         </div>
