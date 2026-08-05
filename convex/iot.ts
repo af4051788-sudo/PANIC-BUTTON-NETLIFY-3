@@ -253,6 +253,99 @@ export const deactivateCommunityAlarm = internalMutation({
   },
 });
 
+const SENSOR_ALERT_TEXT: Record<"door" | "fire" | "flood", { title: string; verb: string }> = {
+  door: { title: "🚪 Sensor Pintu Terbuka", verb: "pintu terbuka" },
+  fire: { title: "🔥 TERDETEKSI API!", verb: "kemungkinan kebakaran" },
+  flood: { title: "💧 Terdeteksi Air/Banjir", verb: "genangan air/banjir" },
+};
+
+/**
+ * Dipanggil firmware Wemos setiap ada PERUBAHAN status sensor pintu/api/air
+ * (bukan tiap loop — cuma saat transisi idle↔trigger, lihat checkSensors()
+ * di firmware). Sensor yang tidak diaktifkan lewat app (sensorsEnabled) akan
+ * diabaikan, sebagai jaring pengaman kalau pin sensor tidak sengaja terbaca
+ * berubah padahal user tidak memasang sensor itu.
+ */
+export const reportSensorEvent = internalMutation({
+  args: {
+    deviceId: v.string(),
+    pairingCode: v.string(),
+    sensorKind: v.union(v.literal("door"), v.literal("fire"), v.literal("flood")),
+    triggered: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const rl = await rateLimiter.limit(ctx, "deviceAlarmToggle", { key: args.deviceId });
+    if (!rl.ok) return { ok: false, rateLimited: true, retryAfter: rl.retryAfter };
+
+    const device = await ctx.db
+      .query("devices")
+      .withIndex("by_device_id", (q) => q.eq("deviceId", args.deviceId))
+      .first();
+    if (!device || device.pairingCode !== args.pairingCode) return { ok: false };
+    if (!device.sensorsEnabled?.includes(args.sensorKind)) return { ok: false }; // sensor ini tidak diaktifkan di app
+
+    const wasTriggered = device.lastSensorState?.[args.sensorKind] ?? false;
+    await ctx.db.patch(device._id, {
+      lastSensorState: { ...device.lastSensorState, [args.sensorKind]: args.triggered },
+    });
+
+    if (args.triggered === wasTriggered) return { ok: true }; // tidak ada perubahan, tidak perlu apa-apa
+
+    if (!args.triggered) {
+      // Sensor kembali normal (pintu ditutup, dst) — selesaikan alarm sensor
+      // yang masih aktif dari device+jenis sensor ini kalau ada.
+      const stillActive = await ctx.db
+        .query("alarms")
+        .withIndex("by_status", (q) => q.eq("status", "active"))
+        .filter((q) => q.and(q.eq(q.field("deviceId"), args.deviceId), q.eq(q.field("sensorKind"), args.sensorKind)))
+        .collect();
+      for (const alarm of stillActive) {
+        await ctx.db.patch(alarm._id, { status: "resolved", resolvedAt: new Date().toISOString() });
+      }
+      return { ok: true };
+    }
+
+    // Baru trigger — buat alarm baru.
+    const isCommunity = device.deviceType === "community" && !!device.groupId;
+    const targetDeviceIds = await resolveTargetDeviceIds(
+      ctx,
+      isCommunity ? { type: "device", id: device._id } : { type: "user", id: device.userId },
+      "panic_silent",
+    );
+    const locationLabel = device.locationLabel ?? device.name;
+    const { title, verb } = SENSOR_ALERT_TEXT[args.sensorKind];
+
+    const alarmId = await ctx.db.insert("alarms", {
+      userId: device.userId,
+      deviceId: args.deviceId,
+      type: "sensor",
+      sensorKind: args.sensorKind,
+      status: "active",
+      startedAt: new Date().toISOString(),
+      isEscalated: args.sensorKind === "fire", // api langsung dianggap eskalasi (paling urgent)
+      groupId: isCommunity ? device.groupId : undefined,
+      targetDeviceIds,
+      isLocationTriggered: isCommunity,
+      triggerLocationLabel: isCommunity ? locationLabel : undefined,
+    });
+
+    const recipients = isCommunity
+      ? await resolveGroupWideRecipients(ctx, device.groupId!)
+      : await resolveAlarmRecipients(ctx, device.userId);
+    if (recipients.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.pushSender.sendAlarmPush, {
+        userIds: recipients,
+        title,
+        body: `Terdeteksi ${verb} di ${locationLabel}.`,
+        alarmId,
+        urgent: args.sensorKind === "fire",
+      });
+    }
+
+    return { ok: true, alarmId };
+  },
+});
+
 // ── Unified polling: ANY device (personal or community) checks whether it
 // is currently a TARGET of any active alarm, regardless of who/what
 // triggered it. This is what makes the local/global targeting system work —
@@ -278,16 +371,32 @@ export const getAlarmStatus = internalQuery({
 
     // Prefer an alarm this device itself triggered (so it always hears its
     // own button press even if somehow excluded from its own target list),
-    // otherwise any alarm that explicitly targets this device.
+    // otherwise any alarm that explicitly targets this device. Escort yang
+    // BELUM ter-eskalasi sengaja DIABAIKAN di sini — device fisik cuma boleh
+    // bunyi setelah timeout tanpa konfirmasi "Aman", bukan dari awal escort
+    // dimulai (masih masa pemantauan senyap).
     const ownTrigger = activeAlarms.find((a) => a.deviceId === args.deviceId);
     const targeting =
       ownTrigger ??
-      activeAlarms.find((a) => a.targetDeviceIds?.includes(device._id));
+      activeAlarms.find(
+        (a) => a.targetDeviceIds?.includes(device._id) && !(a.type === "escort" && !a.isEscalated),
+      );
+
+    // Alarm "sensor" dan "escort" bukan wire-type asli yang dikenal firmware
+    // — petakan ke "panic" (siren penuh) atau "silent" (notifikasi saja).
+    // Escort yang lolos filter di atas SUDAH PASTI ter-eskalasi (darurat
+    // sungguhan), jadi selalu dipetakan siren penuh.
+    let wireAlarmType: string | undefined = targeting?.type;
+    if (targeting?.type === "sensor") {
+      wireAlarmType = targeting.sensorKind === "fire" ? "panic" : "silent";
+    } else if (targeting?.type === "escort") {
+      wireAlarmType = "panic";
+    }
 
     return {
       ok: true,
       alarmActive: !!targeting,
-      alarmType: targeting?.type,
+      alarmType: wireAlarmType,
       isEscalated: targeting?.isEscalated ?? false,
       label: targeting?.triggerLocationLabel,
     };

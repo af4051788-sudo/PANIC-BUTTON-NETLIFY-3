@@ -11,20 +11,20 @@ type ReadCtx = { db: QueryCtx["db"] };
  * Default target devices when the user/device hasn't customized their list:
  *  - user + panic_silent → their own personal devices + every community
  *    device (Pos Satpam/RT/RW/Fasum) across all groups they belong to.
- *  - user + escort → nothing (app-to-app only — walking home shouldn't
- *    wake up the whole neighborhood by default).
- *  - device (community) + panic_silent → every device (personal AND
- *    community) belonging to every member of that device's own group —
- *    this is the "broadcast" behaviour for a location's physical button.
- *  - device + escort → not applicable (community devices don't have an
- *    escort concept), returns [].
+ *  - user + escort → SAMA seperti panic_silent (device disiapkan sejak
+ *    awal), TAPI device baru benar-benar dibunyikan setelah alarm
+ *    di-eskalasi (timeout tanpa konfirmasi "Aman") — lihat isEscalated di
+ *    convex/iot.ts:getAlarmStatus. Selama masih dalam masa pemantauan
+ *    normal, device tetap senyap walau targetnya sudah tersimpan.
+ *  - device (community) + escort → not applicable (community devices don't
+ *    have an escort concept), returns [].
  */
 async function computeDefaultTargets(
   ctx: ReadCtx,
   owner: { type: "user"; id: Id<"users"> } | { type: "device"; id: Id<"devices"> },
   category: TargetCategory,
 ): Promise<Id<"devices">[]> {
-  if (category === "escort") return [];
+  if (category === "escort" && owner.type === "device") return [];
 
   if (owner.type === "user") {
     const personalDevices = await ctx.db

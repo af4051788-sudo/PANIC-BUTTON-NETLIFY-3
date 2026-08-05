@@ -292,11 +292,12 @@ export const startEscortMode = mutation({
       alarmRecipients: args.alarmRecipients,
       targetDeviceIds,
       nextCheckinAt,
+      escortDurationMinutes: durationMinutes,
     });
 
-    // Auto-eskalasi di server sesuai durasi yang diatur user (default 6 menit)
-    // jika tidak konfirmasi "Aman" — ini TIDAK bergantung tab/halaman browser
-    // tetap terbuka sama sekali, jalan murni di server.
+    // Auto-eskalasi di server sesuai durasi yang dipilih user (bukan default
+    // global) jika tidak konfirmasi "Aman" — ini TIDAK bergantung tab/halaman
+    // browser tetap terbuka sama sekali, jalan murni di server.
     const jobId = await ctx.scheduler.runAfter(durationMs, internal.scheduler.autoEscalateEscort, {
       alarmId: id,
     });
@@ -323,6 +324,10 @@ export const startEscortMode = mutation({
  * masih dalam perjalanan). Sekarang: alarm TETAP aktif, cuma jadwal eskalasi
  * dibatalkan & dijadwalkan ULANG dari sekarang — persis seperti menekan
  * "snooze" pada checkpoint keamanan, bukan mematikan pengawalannya.
+ *
+ * Juga reset isEscalated ke false — kalau user konfirmasi "Aman" SETELAH
+ * sempat ter-eskalasi (alarm sudah terlanjur bunyi), ini yang menghentikan
+ * bunyinya (device & tampilan app kembali senyap, lanjut pemantauan normal).
  */
 export const confirmEscortSafe = mutation({
   args: { alarmId: v.id("alarms") },
@@ -337,14 +342,19 @@ export const confirmEscortSafe = mutation({
       await ctx.scheduler.cancel(alarm.escalationJobId);
     }
 
-    const user = await ctx.db.get(userId);
-    const durationMs = (user?.escortDurationMinutes ?? 6) * 60 * 1000;
+    // PENTING: pakai durasi yang TERSIMPAN DI ALARM ini (dipilih user saat
+    // memulai), BUKAN baca ulang dari profil — itu penyebab bug sebelumnya
+    // selalu reset ke 6 menit walau usernya set 1 menit.
+    const durationMs = (alarm.escortDurationMinutes ?? 6) * 60 * 1000;
     const nextCheckinAt = new Date(Date.now() + durationMs).toISOString();
     const jobId = await ctx.scheduler.runAfter(durationMs, internal.scheduler.autoEscalateEscort, {
       alarmId: args.alarmId,
     });
 
-    await ctx.db.patch(args.alarmId, { nextCheckinAt, escalationJobId: jobId });
+    // Reset isEscalated juga — kalau user konfirmasi "Aman" SETELAH sempat
+    // ter-eskalasi (alarm sudah terlanjur bunyi), ini yang menghentikannya:
+    // device & tampilan app kembali senyap, lanjut pemantauan normal.
+    await ctx.db.patch(args.alarmId, { nextCheckinAt, escalationJobId: jobId, isEscalated: false });
   },
 });
 
@@ -440,6 +450,12 @@ export const getMyGroupActiveAlarms = query({
           .first();
         if (!alarm) continue;
         if (seenAlarmIds.has(alarm._id)) continue; // avoid dupes if shared across multiple groups
+
+        // Escort yang BELUM di-eskalasi (masih dalam masa pemantauan normal,
+        // orangnya belum telat konfirmasi "Aman") sengaja TIDAK ditampilkan
+        // sebagai alarm aktif ke anggota lain — biar tidak bikin geger dulu.
+        // Baru muncul sebagai alarm sungguhan begitu benar-benar ter-eskalasi.
+        if (alarm.type === "escort" && !alarm.isEscalated) continue;
 
         // Alarm dari device komunal (Pos Satpam, dst) tampil ke SEMUA anggota
         // grup, tidak difilter oleh preferensi alarmRecipients pribadi siapa pun

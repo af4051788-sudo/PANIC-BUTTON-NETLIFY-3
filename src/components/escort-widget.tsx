@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { motion, AnimatePresence } from "motion/react";
 import { Navigation, ChevronUp, ChevronDown } from "lucide-react";
 import { api } from "@/convex/_generated/api.js";
 import { toast } from "sonner";
 import type { Id } from "@/convex/_generated/dataModel.d.ts";
+import { useEvidenceCapture } from "@/hooks/use-evidence-capture.ts";
 
 /**
  * Widget Escort Mode — ditaruh di AppLayout supaya tampil di SEMUA halaman,
@@ -16,10 +17,13 @@ import type { Id } from "@/convex/_generated/dataModel.d.ts";
  */
 export function EscortWidget() {
   const activeAlarm = useQuery(api.alarms.getMyActiveAlarm, {});
+  const currentUser = useQuery(api.users.getCurrentUser, {});
   const confirmSafe = useMutation(api.groups.confirmEscortSafe);
   const stopEscort = useMutation(api.groups.stopEscortMode);
+  const { captureAndUpload } = useEvidenceCapture();
   const [expanded, setExpanded] = useState(false);
   const [, forceTick] = useState(0);
+  const capturedForAlarmId = useRef<string | null>(null);
 
   const isEscort = activeAlarm?.type === "escort" && activeAlarm.status === "active";
 
@@ -29,12 +33,35 @@ export function EscortWidget() {
     return () => clearInterval(id);
   }, [isEscort]);
 
+  // Begitu eskalasi terjadi (timeout tanpa konfirmasi "Aman"), otomatis
+  // ambil bukti sesuai pengaturan user — SAMA seperti saat tombol panic
+  // ditekan manual. Ini best-effort: cuma jalan kalau app-nya kebetulan
+  // masih terbuka di HP saat itu (browser tidak bisa akses kamera/mic dari
+  // background/terkunci) — batasan platform, bukan bug.
+  useEffect(() => {
+    if (!isEscort || !activeAlarm?.isEscalated) return;
+    if (capturedForAlarmId.current === activeAlarm._id) return; // sudah pernah capture untuk alarm ini
+    capturedForAlarmId.current = activeAlarm._id;
+    if (currentUser?.evidenceCaptureEnabled && currentUser.evidenceCaptureTypes?.length) {
+      void captureAndUpload(
+        activeAlarm._id as Id<"alarms">,
+        currentUser.evidenceCaptureTypes,
+        currentUser.evidenceCaptureDurationSec ?? 20,
+      );
+    }
+  }, [isEscort, activeAlarm?.isEscalated, activeAlarm?._id, currentUser, captureAndUpload]);
+
+  useEffect(() => {
+    if (activeAlarm?.isEscalated) setExpanded(true);
+  }, [activeAlarm?.isEscalated]);
+
   if (!isEscort || !activeAlarm.nextCheckinAt) return null;
 
+  const isEscalated = !!activeAlarm.isEscalated;
   const secondsLeft = Math.max(0, Math.round((new Date(activeAlarm.nextCheckinAt).getTime() - Date.now()) / 1000));
   const minutes = Math.floor(secondsLeft / 60);
   const seconds = secondsLeft % 60;
-  const isUrgent = secondsLeft < 60;
+  const isUrgent = isEscalated || secondsLeft < 60;
 
   const handleSafe = async () => {
     try {
@@ -68,15 +95,19 @@ export function EscortWidget() {
           className="w-full flex items-center gap-2 px-4 py-2.5 cursor-pointer"
         >
           <motion.div
-            animate={{ scale: [1, 1.15, 1] }}
-            transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+            animate={isEscalated ? { scale: [1, 1.3, 1] } : { scale: [1, 1.15, 1] }}
+            transition={{ duration: isEscalated ? 0.6 : 1.2, repeat: Infinity, ease: "easeInOut" }}
           >
             <Navigation className="size-4 text-white" />
           </motion.div>
-          <span className="text-xs font-bold text-white flex-1 text-left">Escort Mode Aktif</span>
-          <span className="text-sm font-black text-white tabular-nums">
-            {minutes}:{seconds.toString().padStart(2, "0")}
+          <span className="text-xs font-bold text-white flex-1 text-left">
+            {isEscalated ? "🚨 ALARM AKTIF — Segera Konfirmasi!" : "Escort Mode Aktif"}
           </span>
+          {!isEscalated && (
+            <span className="text-sm font-black text-white tabular-nums">
+              {minutes}:{seconds.toString().padStart(2, "0")}
+            </span>
+          )}
           {expanded ? <ChevronDown className="size-4 text-white" /> : <ChevronUp className="size-4 text-white" />}
         </button>
 
@@ -90,7 +121,9 @@ export function EscortWidget() {
             >
               <div className="px-4 pb-3 pt-1 space-y-2">
                 <p className="text-[11px] text-white/80">
-                  Konfirmasi "Aman" sebelum waktu habis, atau alarm darurat otomatis aktif & kontak darurat dihubungi.
+                  {isEscalated
+                    ? 'Tidak ada konfirmasi tepat waktu — alarm & sirine sudah aktif ke pemantau + device fisik. Tekan "Saya Aman" untuk menghentikannya.'
+                    : 'Konfirmasi "Aman" sebelum waktu habis, atau alarm darurat otomatis aktif & kontak darurat dihubungi.'}
                 </p>
                 <div className="flex gap-2">
                   <button

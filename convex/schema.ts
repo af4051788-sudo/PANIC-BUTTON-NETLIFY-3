@@ -141,6 +141,11 @@ export default defineSchema({
     // browser) — supaya tetap jalan walau user pindah halaman/tutup app.
     nextCheckinAt: v.optional(v.string()), // kapan konfirmasi "Aman" berikutnya jatuh tempo
     escalationJobId: v.optional(v.id("_scheduled_functions")), // job eskalasi yang sedang terjadwal, dibatalkan & dijadwal ulang tiap konfirmasi "Aman"
+    // Durasi yang DIPILIH USER saat memulai escort (dari modal) — disimpan
+    // di alarm-nya sendiri, BUKAN dibaca ulang dari setting profil, supaya
+    // "Aman" konsisten reset ke durasi yang sama persis tiap kali, bukan
+    // balik ke default global.
+    escortDurationMinutes: v.optional(v.number()),
   })
     .index("by_user", ["userId"])
     .index("by_status", ["status"]),
