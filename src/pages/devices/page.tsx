@@ -456,7 +456,7 @@ function AlarmTargetSettings() {
         <p className="text-xs text-muted-foreground italic">
           {category === "panic_silent"
             ? "Default: semua device (pribadi + komunal grup kamu) ikut bunyi."
-            : "Default: tidak ada device yang bunyi — hanya notifikasi antar-app (cocok untuk jalan pulang malam tanpa geger satu RT)."}
+            : "Default: sama seperti Panic/Silent (device disiapkan sejak awal), tapi baru benar-benar bunyi kalau Escort Mode ter-eskalasi (timeout tanpa konfirmasi \"Aman\") — selama masih dalam masa pemantauan normal, device tetap senyap."}
         </p>
       )}
 
