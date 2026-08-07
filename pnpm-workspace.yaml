@@ -8,5 +8,5 @@ onlyBuiltDependencies:
 
 allowBuilds:
   "@swc/core": true
-  core-js: set this to true or false
+  core-js: true
   esbuild: true

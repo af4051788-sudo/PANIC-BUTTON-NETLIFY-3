@@ -120,7 +120,11 @@ export const getDashboardStats = query({
     const allAlarms = await ctx.db.query("alarms").order("desc").take(500);
     const todayAlarms = allAlarms.filter((a) => a.startedAt >= todayISO);
     const activeAlarms = allAlarms.filter((a) => a.status === "active");
-    const escalatedAlarms = allAlarms.filter((a) => a.isEscalated);
+    // Pakai everEscalated (historis, tidak pernah balik false), BUKAN
+    // isEscalated (runtime, naik-turun tiap alarm bunyi/senyap) — supaya
+    // statistik ini tetap berarti "pernah benar-benar eskalasi", bukan
+    // ikut kehitung tiap panic/silent yang memang defaultnya langsung bunyi.
+    const escalatedAlarms = allAlarms.filter((a) => a.everEscalated);
 
     const resolvedWithTime = allAlarms.filter(
       (a) => a.status === "resolved" && a.resolvedAt,

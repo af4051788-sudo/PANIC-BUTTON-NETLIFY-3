@@ -16,7 +16,18 @@ export const autoEscalateEscort = internalMutation({
     if (!alarm || alarm.status !== "active" || alarm.isEscalated) return;
     if (alarm.type !== "escort") return;
 
-    await ctx.db.patch(args.alarmId, { isEscalated: true });
+    await ctx.db.patch(args.alarmId, { isEscalated: true, everEscalated: true });
+
+    // Nyalakan smart plug Tuya yang termasuk target escort ini — ini yang
+    // sebelumnya HILANG: isEscalated di-set true tapi tidak ada perintah
+    // apapun yang benar-benar dikirim ke Tuya Cloud, jadi smart plug diam
+    // walau device fisik (Wemos, lewat polling getAlarmStatus) sudah bunyi.
+    if (alarm.targetDeviceIds && alarm.targetDeviceIds.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.tuya.controlSmartPlugsForAlarm, {
+        targetDeviceIds: alarm.targetDeviceIds,
+        turnOn: true,
+      });
+    }
 
     const owner = await ctx.db.get(alarm.userId);
 

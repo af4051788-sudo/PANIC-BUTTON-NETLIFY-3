@@ -56,7 +56,12 @@ export const triggerAlarm = mutation({
       latitude: args.latitude,
       longitude: args.longitude,
       startedAt: new Date().toISOString(),
-      isEscalated: false,
+      // Panic/silent langsung "aktif" (bunyi) sejak awal — hanya escort yang
+      // sengaja mulai senyap dan menunggu eskalasi (lihat resolveTargetDeviceIds
+      // & autoEscalateEscort). isEscalated dipakai generik sebagai penanda
+      // "target sedang bunyi/aktif" untuk SEMUA tipe alarm, bukan cuma escort —
+      // supaya bisa dimatikan lewat respondToAlarm (lihat groups.ts).
+      isEscalated: args.type !== "escort",
       targetDeviceIds,
     });
 

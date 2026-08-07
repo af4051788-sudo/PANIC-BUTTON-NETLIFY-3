@@ -126,7 +126,18 @@ export default defineSchema({
     locationArea: v.optional(v.string()),
     startedAt: v.string(),
     resolvedAt: v.optional(v.string()),
+    // Penanda RUNTIME "target sedang bunyi/aktif sekarang" — dipakai untuk
+    // gating polling device fisik (getAlarmStatus) & kontrol smart plug.
+    // Nilainya bisa naik-turun berkali-kali sepanjang hidup satu alarm
+    // (mis. escort: senyap → bunyi saat timeout → senyap lagi saat direspon
+    // → bisa bunyi lagi kalau timeout lagi).
     isEscalated: v.boolean(),
+    // Penanda HISTORIS "alarm ini PERNAH benar-benar ter-eskalasi" (escort
+    // timeout tanpa konfirmasi, eskalasi manual dari device fisik, atau
+    // sensor api) — sekali true, TIDAK PERNAH direset false lagi. Dipakai
+    // khusus untuk statistik admin ("Eskalasi" di dashboard), supaya tidak
+    // ikut kebawa naik-turun isEscalated yang sifatnya cuma runtime di atas.
+    everEscalated: v.optional(v.boolean()),
     incidentCategory: v.optional(v.string()),
     reportDescription: v.optional(v.string()),
     responderNote: v.optional(v.string()),
@@ -225,5 +236,16 @@ export default defineSchema({
     type: v.union(v.literal("photo"), v.literal("audio"), v.literal("video")),
     storageId: v.id("_storage"),
     capturedAt: v.string(),
+  }).index("by_alarm", ["alarmId"]),
+
+  // Fase 9: chat singkat per-alarm — buat penekan panic & responder koordinasi
+  // cepat ("saya di jalan", "sudah aman", dll) selama alarm masih aktif.
+  // Bukan chat umum/permanen — history-nya nempel ke 1 alarm spesifik.
+  alarmMessages: defineTable({
+    alarmId: v.id("alarms"),
+    senderId: v.id("users"),
+    senderName: v.string(), // disimpan langsung (denormalized) biar tidak perlu join tiap render
+    text: v.string(),
+    createdAt: v.string(),
   }).index("by_alarm", ["alarmId"]),
 });

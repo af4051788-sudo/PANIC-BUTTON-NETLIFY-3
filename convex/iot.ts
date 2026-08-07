@@ -73,7 +73,7 @@ export const activateAlarm = internalMutation({
       type: args.type,
       status: "active",
       startedAt: new Date().toISOString(),
-      isEscalated: false,
+      isEscalated: true, // panic/silent dari tombol fisik langsung aktif/bunyi
       targetDeviceIds,
     });
 
@@ -152,7 +152,7 @@ export const escalateAlarm = internalMutation({
       .first();
 
     if (activeAlarm) {
-      await ctx.db.patch(activeAlarm._id, { isEscalated: true });
+      await ctx.db.patch(activeAlarm._id, { isEscalated: true, everEscalated: true });
     }
     return { ok: true };
   },
@@ -202,7 +202,7 @@ export const activateCommunityAlarm = internalMutation({
       type: args.type,
       status: "active",
       startedAt: new Date().toISOString(),
-      isEscalated: false,
+      isEscalated: true, // panic/silent dari tombol fisik komunal langsung aktif/bunyi
       groupId: device.groupId,
       targetDeviceIds,
       isLocationTriggered: true,
@@ -322,7 +322,8 @@ export const reportSensorEvent = internalMutation({
       sensorKind: args.sensorKind,
       status: "active",
       startedAt: new Date().toISOString(),
-      isEscalated: args.sensorKind === "fire", // api langsung dianggap eskalasi (paling urgent)
+      isEscalated: true, // sensor apapun (pintu/api/air) langsung aktif/bunyi begitu terdeteksi
+      everEscalated: args.sensorKind === "fire", // cuma api yang dihitung "eskalasi sungguhan" utk statistik admin
       groupId: isCommunity ? device.groupId : undefined,
       targetDeviceIds,
       isLocationTriggered: isCommunity,
@@ -371,16 +372,17 @@ export const getAlarmStatus = internalQuery({
 
     // Prefer an alarm this device itself triggered (so it always hears its
     // own button press even if somehow excluded from its own target list),
-    // otherwise any alarm that explicitly targets this device. Escort yang
-    // BELUM ter-eskalasi sengaja DIABAIKAN di sini — device fisik cuma boleh
-    // bunyi setelah timeout tanpa konfirmasi "Aman", bukan dari awal escort
-    // dimulai (masih masa pemantauan senyap).
-    const ownTrigger = activeAlarms.find((a) => a.deviceId === args.deviceId);
+    // otherwise any alarm that explicitly targets this device. `isEscalated`
+    // di sini dipakai generik sebagai penanda "target sedang bunyi/aktif"
+    // untuk SEMUA tipe alarm (bukan cuma escort) — panic/silent/sensor mulai
+    // dengan isEscalated: true (langsung bunyi), escort mulai false (senyap,
+    // baru true setelah timeout tanpa konfirmasi "Aman"). Begitu ada anggota
+    // yang merespon (respondToAlarm di groups.ts), isEscalated di-set false
+    // lagi supaya device fisik ikut berhenti bunyi juga.
+    const ownTrigger = activeAlarms.find((a) => a.deviceId === args.deviceId && a.isEscalated);
     const targeting =
       ownTrigger ??
-      activeAlarms.find(
-        (a) => a.targetDeviceIds?.includes(device._id) && !(a.type === "escort" && !a.isEscalated),
-      );
+      activeAlarms.find((a) => a.targetDeviceIds?.includes(device._id) && a.isEscalated);
 
     // Alarm "sensor" dan "escort" bukan wire-type asli yang dikenal firmware
     // — petakan ke "panic" (siren penuh) atau "silent" (notifikasi saja).

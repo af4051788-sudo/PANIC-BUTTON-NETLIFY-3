@@ -30,6 +30,7 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // since responding is a one-tap action people may retry if the network
   // hiccups, or do for several concurrent alarms.
   respondToAlarm: { kind: "token bucket", rate: 20, period: MINUTE, capacity: 10 },
+  sendAlarmMessage: { kind: "token bucket", rate: 30, period: MINUTE, capacity: 15 },
 
   // Per-device IoT hardware calls (Wemos). Heartbeat happens routinely, so
   // it gets a higher ceiling than the alarm-toggle endpoints.

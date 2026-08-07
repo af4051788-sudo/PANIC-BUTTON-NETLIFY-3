@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { useIncomingAlarms } from "@/hooks/use-alarm-context.tsx";
 import { useEvidenceCapture } from "@/hooks/use-evidence-capture.ts";
 import { EscortQuickButton } from "@/components/escort-quick-button.tsx";
+import { AlarmChatPanel } from "@/components/alarm-chat.tsx";
 import {
   ShieldAlert, Bell, BellOff, MapPin, Wifi,
   ShieldCheck, Users, AlertTriangle, ExternalLink,
@@ -36,7 +37,7 @@ function StandbyRipples() {
       {[0, 1, 2].map((i) => (
         <motion.div
           key={i}
-          className="absolute inset-0 rounded-full border border-primary/20"
+          className="absolute inset-0 rounded-full border border-primary/20 pointer-events-none"
           style={{ margin: `-${(i + 1) * 28}px` }}
           animate={{ scale: [1, 1.15, 1], opacity: [0.5, 0, 0.5] }}
           transition={{ duration: 3, delay: i * 1, repeat: Infinity, ease: "easeInOut" }}
@@ -53,7 +54,7 @@ function IncomingAlarmRipples() {
       {[0, 1, 2, 3].map((i) => (
         <motion.div
           key={i}
-          className="absolute rounded-full"
+          className="absolute rounded-full pointer-events-none"
           style={{
             inset: `-${(i + 1) * 20}px`,
             border: "2px solid #f59e0b",
@@ -162,7 +163,7 @@ const PanicBtn = memo(function PanicBtn({
             {[0, 1, 2].map((i) => (
               <motion.div
                 key={i}
-                className="absolute rounded-full border-2"
+                className="absolute rounded-full border-2 pointer-events-none"
                 style={{ inset: `-${(i + 1) * 22}px`, borderColor: colorScheme.ring }}
                 initial={{ opacity: 0.8, scale: 1 }}
                 animate={{ opacity: 0, scale: 1.6 }}
@@ -533,6 +534,7 @@ const IncomingAlarmBanner = memo(function IncomingAlarmBanner({
                 <>
                   <AlarmLocationButton alarmId={a.alarmId} />
                   <AlarmEvidenceViewer alarmId={a.alarmId} />
+                  <AlarmChatPanel alarmId={a.alarmId} />
                 </>
               )}
             </motion.div>
@@ -784,6 +786,7 @@ function PanicButtonCore() {
           <ResponderListButton alarmId={activeAlarm._id} responderCount={activeAlarm.responderCount} />
           <div className="w-full">
             <AlarmEvidenceViewer alarmId={activeAlarm._id} />
+            <AlarmChatPanel alarmId={activeAlarm._id} />
           </div>
         </div>
       )}

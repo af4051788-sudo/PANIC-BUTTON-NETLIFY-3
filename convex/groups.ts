@@ -355,6 +355,14 @@ export const confirmEscortSafe = mutation({
     // ter-eskalasi (alarm sudah terlanjur bunyi), ini yang menghentikannya:
     // device & tampilan app kembali senyap, lanjut pemantauan normal.
     await ctx.db.patch(args.alarmId, { nextCheckinAt, escalationJobId: jobId, isEscalated: false });
+
+    // Matikan juga smart plug Tuya kalau tadi sempat dinyalakan saat eskalasi.
+    if (alarm.isEscalated && alarm.targetDeviceIds && alarm.targetDeviceIds.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.tuya.controlSmartPlugsForAlarm, {
+        targetDeviceIds: alarm.targetDeviceIds,
+        turnOn: false,
+      });
+    }
   },
 });
 
@@ -375,6 +383,15 @@ export const stopEscortMode = mutation({
       await ctx.scheduler.cancel(alarm.escalationJobId);
     }
     await ctx.db.patch(args.alarmId, { status: "resolved", resolvedAt: new Date().toISOString() });
+
+    // Matikan smart plug Tuya kalau lagi aktif — Stop harus selalu benar-benar
+    // menghentikan target, terlepas dari apakah tadi sempat ter-eskalasi.
+    if (alarm.targetDeviceIds && alarm.targetDeviceIds.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.tuya.controlSmartPlugsForAlarm, {
+        targetDeviceIds: alarm.targetDeviceIds,
+        turnOn: false,
+      });
+    }
   },
 });
 
@@ -600,11 +617,57 @@ export const respondToAlarm = mutation({
       .unique();
     if (existing) return { ok: true }; // already responded — idempotent no-op
 
+    // Cek dulu SEBELUM insert apakah ini respons PERTAMA untuk alarm ini —
+    // hanya respons pertama yang boleh mematikan target (respons kedua dst
+    // dari anggota lain jadi no-op untuk bagian ini, targetnya sudah mati).
+    const priorResponses = await ctx.db
+      .query("alarmResponses")
+      .withIndex("by_alarm", (q) => q.eq("alarmId", args.alarmId))
+      .collect();
+    const isFirstResponse = priorResponses.length === 0;
+
     await ctx.db.insert("alarmResponses", {
       alarmId: args.alarmId,
       responderId: userId,
       respondedAt: new Date().toISOString(),
     });
+
+    // Begitu direspon anggota PERTAMA kali (dan targetnya memang lagi
+    // bunyi), matikan target alarm — baik smart plug (perintah eksplisit ke
+    // Tuya) maupun device fisik Wemos (lewat isEscalated: false, yang
+    // dibaca saat device polling status di getAlarmStatus).
+    if (isFirstResponse && alarm.isEscalated) {
+      if (alarm.targetDeviceIds && alarm.targetDeviceIds.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.tuya.controlSmartPlugsForAlarm, {
+          targetDeviceIds: alarm.targetDeviceIds,
+          turnOn: false,
+        });
+      }
+
+      if (alarm.type === "escort") {
+        // Escort tetap lanjut (bukan resolved) — cuma senyap sementara.
+        // Jadwalkan ulang eskalasi dari sekarang, persis seperti tombol
+        // "Aman", supaya kalau pemilik tidak pernah konfirmasi sendiri,
+        // alarm akan bunyi lagi kalau waktunya habis lagi — berulang
+        // sampai pemilik menekan "Aman" atau "Stop".
+        if (alarm.escalationJobId) {
+          await ctx.scheduler.cancel(alarm.escalationJobId);
+        }
+        const durationMs = (alarm.escortDurationMinutes ?? 6) * 60 * 1000;
+        const nextCheckinAt = new Date(Date.now() + durationMs).toISOString();
+        const jobId = await ctx.scheduler.runAfter(durationMs, internal.scheduler.autoEscalateEscort, {
+          alarmId: args.alarmId,
+        });
+        await ctx.db.patch(args.alarmId, {
+          isEscalated: false,
+          nextCheckinAt,
+          escalationJobId: jobId,
+        });
+      } else {
+        // Panic/silent/sensor tidak punya siklus timer — cukup senyapkan.
+        await ctx.db.patch(args.alarmId, { isEscalated: false });
+      }
+    }
 
     const responder = await ctx.db.get(userId);
     const responderName = responder?.name ?? "Seseorang";
