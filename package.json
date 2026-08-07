@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "preview": "vite preview",
-    "build": "tsc -b && vite build",
+    "build": "convex deploy --cmd 'tsc -b && vite build'",
+    "build:frontend-only": "tsc -b && vite build",
     "test": "vitest run",
     "lint": "eslint .",
     "prettier-fix": "prettier --write .",
