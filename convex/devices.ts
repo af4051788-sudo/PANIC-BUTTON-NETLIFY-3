@@ -98,6 +98,24 @@ export const deviceHeartbeat = mutation({
   },
 });
 
+export const setDeviceSensors = mutation({
+  args: {
+    deviceId: v.id("devices"),
+    sensorsEnabled: v.array(v.union(v.literal("door"), v.literal("fire"), v.literal("flood"))),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
+
+    const device = await ctx.db.get(args.deviceId);
+    if (!device) return;
+    if (device.userId !== userId) {
+      throw new ConvexError({ message: "Anda tidak memiliki izin untuk device ini.", code: "FORBIDDEN" });
+    }
+    await ctx.db.patch(args.deviceId, { sensorsEnabled: args.sensorsEnabled });
+  },
+});
+
 export const regeneratePairingCode = mutation({
   args: { deviceId: v.id("devices") },
   handler: async (ctx, args) => {
